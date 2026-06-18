@@ -19,6 +19,7 @@
 
 #include "Arena.h"
 #include "EventMap.h"
+#include "MobaRules.h"
 
 enum BattlegroundNAObjectTypes
 {
@@ -33,8 +34,9 @@ enum BattlegroundNAObjectTypes
 
 enum BattlegroundNACreatureTypes
 {
-    BG_NA_CREATURE_NEXUS        = 0,
-    BG_NA_CREATURE_MAX          = 1
+    BG_NA_CREATURE_BLUE_NEXUS   = 0,
+    BG_NA_CREATURE_RED_NEXUS    = 1,
+    BG_NA_CREATURE_MAX          = 2
 };
 
 enum BattlegroundNAGameObjects
@@ -49,7 +51,14 @@ enum BattlegroundNAGameObjects
 
 enum BattlegroundNACreatures
 {
-    BG_NA_CREATURE_TYPE_NEXUS   = 900001
+    BG_NA_CREATURE_TYPE_BLUE_NEXUS = Moba::NpcBlueNexus,
+    BG_NA_CREATURE_TYPE_RED_NEXUS  = Moba::NpcRedNexus
+};
+
+enum BattlegroundNAMobaTeams
+{
+    BG_NA_MOBA_TEAM_BLUE        = Moba::BlueTeamId,
+    BG_NA_MOBA_TEAM_RED         = Moba::RedTeamId
 };
 
 inline constexpr Seconds BG_NA_REMOVE_DOORS_TIMER    = 5s;
@@ -65,6 +74,8 @@ class BattlegroundNA : public Arena
         BattlegroundNA();
 
         /* inherited from BattlegroundClass */
+        void AddPlayer(Player* player) override;
+        void RemovePlayer(Player* player, ObjectGuid guid, uint32 team) override;
         void StartingEventCloseDoors() override;
         void StartingEventOpenDoors() override;
 
@@ -76,6 +87,8 @@ class BattlegroundNA : public Arena
     private:
         void PostUpdateImpl(uint32 diff) override;
         void CheckWinConditions() override;
+        void SpawnMobaNexuses();
+        uint32 GetWinnerForDestroyedNexus(Creature const* creature);
 
         EventMap _events;
 };

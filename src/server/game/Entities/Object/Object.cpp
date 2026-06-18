@@ -29,6 +29,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MiscPackets.h"
+#include "MobaRules.h"
 #include "MovementInfo.h"
 #include "MovementPackets.h"
 #include "ObjectAccessor.h"
@@ -2856,6 +2857,14 @@ SpellCastResult WorldObject::CastSpell(CastSpellTargetArg const& targets, uint32
 bool WorldObject::IsValidAttackTarget(WorldObject const* target, SpellInfo const* bySpell /*= nullptr*/) const
 {
     ASSERT(target);
+
+    if (Player const* playerAttacker = GetAffectingPlayer())
+        if (playerAttacker->GetBattleground())
+            if (Creature const* creatureTarget = target->ToCreature())
+            {
+                if (Moba::IsOwnNexus(playerAttacker->GetBGTeam(), creatureTarget->GetEntry()))
+                    return false;
+            }
 
     // some positive spells can be casted at hostile target
     bool isPositiveSpell = bySpell && bySpell->IsPositive();

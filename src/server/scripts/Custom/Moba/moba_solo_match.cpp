@@ -77,6 +77,8 @@ void QueueSoloNexusTest(Player* player)
         player->SetBattlegroundEntryPoint();
 
     player->SetBattlegroundId(bg->GetInstanceID(), BATTLEGROUND_NA);
+    // Prototype mapping: ALLIANCE/HORDE are only technical BG team ids.
+    // MOBA teams are Blue/Red and must stay independent from character faction.
     player->SetBGTeam(ALLIANCE);
 
     TC_LOG_INFO("scripts", "MOBA solo: player {} entering Nagrand Arena BG instance {}", player->GetName(), bg->GetInstanceID());

@@ -6,6 +6,7 @@
 #define CUSTOM_MOBA_SHARED_H
 
 #include "Define.h"
+#include "MobaRules.h"
 
 #include <cstddef>
 
@@ -13,16 +14,6 @@ class Player;
 
 namespace Moba
 {
-enum Constants
-{
-    NpcTextDefault = 1,
-    PrototypeLevel = 10,
-    NpcNexus = 900001,
-    ActionJoinSoloTest = 1100,
-    MapGmIsland = 1,
-    MapSoloTest = 36
-};
-
 struct HeroKit
 {
     char const* Name;

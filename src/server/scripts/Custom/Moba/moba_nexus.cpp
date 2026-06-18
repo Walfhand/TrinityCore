@@ -8,6 +8,7 @@
 #include "Creature.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "Unit.h"
 #include "WorldSession.h"
 
 class npc_moba_nexus : public CreatureScript
@@ -30,6 +31,19 @@ public:
         void MoveInLineOfSight(Unit* /*who*/) override { }
 
         void AttackStart(Unit* /*who*/) override { }
+
+        void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
+        {
+            Player* player = attacker ? attacker->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+            if (!player || !player->GetBattleground())
+                return;
+
+            if (!Moba::IsOwnNexus(player->GetBGTeam(), me->GetEntry()))
+                return;
+
+            damage = 0;
+            player->GetSession()->SendNotification("Tu ne peux pas attaquer ton Nexus.");
+        }
 
         void JustDied(Unit* killer) override
         {
