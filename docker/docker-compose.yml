@@ -1,0 +1,63 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: trinity335_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: trinityroot
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-utrinity", "-ptrinity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - trinity
+
+  authserver:
+    image: trinitycore/trinitycore:3.3.5
+    container_name: trinity335_authserver
+    restart: unless-stopped
+    entrypoint: authserver
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./configs:/home/circleci/project/bin/check_install/etc:ro
+      - ./logs:/home/circleci/logs
+      - ../sql:/trinity/source/sql:ro
+    ports:
+      - "3724:3724"
+    networks:
+      - trinity
+
+  worldserver:
+    image: trinitycore/trinitycore:3.3.5
+    container_name: trinity335_worldserver
+    restart: unless-stopped
+    entrypoint: worldserver
+    stdin_open: true
+    tty: true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./configs:/home/circleci/project/bin/check_install/etc:ro
+      - ./data:/trinity/data:ro
+      - ./logs:/home/circleci/logs
+      - ../sql:/trinity/source/sql:ro
+    ports:
+      - "8085:8085"
+    networks:
+      - trinity
+
+networks:
+  trinity:
+    name: trinity335

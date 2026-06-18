@@ -23,3 +23,13 @@ nbproject/*
 cmake-build-*/
 .vs
 *.user
+docker/configs/*.conf
+docker/data/*
+!docker/data/.gitkeep
+docker/logs/*
+!docker/logs/.gitkeep
+docker/mysql/data/*
+docker/downloads/*
+!docker/downloads/.gitkeep
+docker/client/*
+!docker/client/.gitkeep
