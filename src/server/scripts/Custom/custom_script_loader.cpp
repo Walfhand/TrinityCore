@@ -16,9 +16,15 @@
  */
 
 // This is where scripts' loading functions should be declared:
+void AddSC_moba_lobby();
+void AddSC_moba_nexus();
+void AddSC_moba_solo_match();
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddCustomScripts()
 {
+    AddSC_moba_lobby();
+    AddSC_moba_nexus();
+    AddSC_moba_solo_match();
 }

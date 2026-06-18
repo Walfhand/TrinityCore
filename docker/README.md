@@ -72,23 +72,73 @@ From the repository root, prefer these wrappers during local development:
 
 ```bash
 make config
+make image
 make db-import
+make db-custom
 make data-fast
 make up
+make client
 make ps
 make logs
 ```
 
 Use `make data-fast` for the first boot. It extracts `dbc`, `maps`, and `vmaps`
 but skips `mmaps`. Use `make data` later when you want full movement maps.
+Use `make client` to launch the local WoW client through the Bottles Flatpak
+Wine runtime.
+Use `make image` after C++ changes so Docker runs the locally modified core.
+Use `make db-custom` after SQL changes in `sql/custom`.
+
+## MOBA Prototype
+
+The first custom gameplay slice adds a lobby NPC:
+
+- Entry: `900000`
+- Script: `npc_moba_lobby`
+- Spawn: GM Island, map `1`, around `16222 16266 13`
+
+Find the current lobby guid after `make db-custom` with:
+
+```bash
+docker compose -f docker/docker-compose.yml exec -T mysql \
+  mysql -uroot -ptrinityroot world \
+  -e "SELECT guid,id,map,position_x,position_y,position_z FROM creature WHERE id=900000;"
+```
+
+It also adds a first win-condition objective:
+
+- Entry: `900001`
+- Script: `npc_moba_nexus`
+- Spawn: dynamic summon in the solo test instance, map `36`
+- Prototype behavior: using `Tag solo - Test Nexus` teleports the player into
+  the solo test, summons the Nexus, and killing it announces victory before
+  returning the player to the lobby.
+
+After changing custom C++ or SQL, run:
+
+```bash
+make image
+make db-custom
+docker compose -f docker/docker-compose.yml up -d --force-recreate authserver worldserver
+```
+
+In game, a GM can jump to the selector with:
+
+```text
+.go creature <lobby_guid>
+```
+
+The current selector applies prototype hero kits on top of the existing
+character class. It can also queue a solo Nexus test so we can validate the
+match entry flow, spell-set feel, and the basic victory loop before changing
+character creation or client data.
 
 ## Notes
 
-This currently uses the official vanilla image:
+This setup runs a locally built image:
 
 ```text
-trinitycore/trinitycore:3.3.5
+trinitycore-335-moba:local
 ```
 
-When the MOBA C++ changes start, replace the service `image` with a custom
-image built from this fork/branch.
+The image is built from the current source tree with `make image`.

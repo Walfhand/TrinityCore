@@ -22,7 +22,7 @@ services:
       - trinity
 
   authserver:
-    image: trinitycore/trinitycore:3.3.5
+    image: trinitycore-335-moba:local
     container_name: trinity335_authserver
     restart: unless-stopped
     entrypoint: authserver
@@ -39,7 +39,7 @@ services:
       - trinity
 
   worldserver:
-    image: trinitycore/trinitycore:3.3.5
+    image: trinitycore-335-moba:local
     container_name: trinity335_worldserver
     restart: unless-stopped
     entrypoint: worldserver

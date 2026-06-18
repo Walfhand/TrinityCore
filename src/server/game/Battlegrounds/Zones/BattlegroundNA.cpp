@@ -16,6 +16,7 @@
  */
 
 #include "BattlegroundNA.h"
+#include "Creature.h"
 #include "Log.h"
 #include "Player.h"
 #include "WorldPacket.h"
@@ -24,6 +25,12 @@
 BattlegroundNA::BattlegroundNA()
 {
     BgObjects.resize(BG_NA_OBJECT_MAX);
+    BgCreatures.resize(BG_NA_CREATURE_MAX);
+
+    StartDelayTimes[BG_STARTING_EVENT_FIRST]  = BG_START_DELAY_NONE;
+    StartDelayTimes[BG_STARTING_EVENT_SECOND] = BG_START_DELAY_NONE;
+    StartDelayTimes[BG_STARTING_EVENT_THIRD]  = BG_START_DELAY_NONE;
+    StartDelayTimes[BG_STARTING_EVENT_FOURTH] = BG_START_DELAY_NONE;
 }
 
 void BattlegroundNA::PostUpdateImpl(uint32 diff)
@@ -61,6 +68,14 @@ void BattlegroundNA::StartingEventOpenDoors()
 
     for (uint32 i = BG_NA_OBJECT_BUFF_1; i <= BG_NA_OBJECT_BUFF_2; ++i)
         SpawnBGObject(i, 60);
+
+    if (Creature* nexus = AddCreature(BG_NA_CREATURE_TYPE_NEXUS, BG_NA_CREATURE_NEXUS, 4057.0f, 2920.0f, 13.05f, 1.57f, TEAM_NEUTRAL, RESPAWN_IMMEDIATELY))
+    {
+        TC_LOG_INFO("bg.battleground", "MOBA solo: Nexus spawned in Nagrand Arena BG instance {}", GetInstanceID());
+        nexus->Yell("Detruis le Nexus pour gagner.", LANG_UNIVERSAL, nullptr);
+    }
+    else
+        TC_LOG_ERROR("bg.battleground", "MOBA solo: Nexus spawn failed in Nagrand Arena BG instance {}", GetInstanceID());
 }
 
 void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
@@ -77,6 +92,28 @@ void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
             Battleground::HandleAreaTrigger(player, trigger);
             break;
     }
+}
+
+void BattlegroundNA::HandleKillUnit(Creature* creature, Player* killer)
+{
+    if (!creature || creature->GetEntry() != BG_NA_CREATURE_TYPE_NEXUS)
+        return;
+
+    if (GetStatus() != STATUS_IN_PROGRESS && GetStatus() != STATUS_WAIT_JOIN)
+        return;
+
+    uint32 winner = killer ? killer->GetBGTeam() : ALLIANCE;
+    if (winner != ALLIANCE && winner != HORDE)
+        winner = ALLIANCE;
+
+    TC_LOG_INFO("bg.battleground", "MOBA solo: Nexus killed by {} in Nagrand Arena BG instance {}", killer ? killer->GetName() : "<unknown>", GetInstanceID());
+    Battleground::EndBattleground(winner);
+}
+
+void BattlegroundNA::CheckWinConditions()
+{
+    // MOBA prototype: Nagrand Arena is used as a Nexus objective map.
+    // A solo test player must not instantly win because the other arena team is empty.
 }
 
 void BattlegroundNA::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)

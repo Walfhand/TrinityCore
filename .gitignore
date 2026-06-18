@@ -33,3 +33,4 @@ docker/downloads/*
 !docker/downloads/.gitkeep
 docker/client/*
 !docker/client/.gitkeep
+docker/build-cache/*

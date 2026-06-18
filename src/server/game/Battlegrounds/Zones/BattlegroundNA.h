@@ -31,6 +31,12 @@ enum BattlegroundNAObjectTypes
     BG_NA_OBJECT_MAX            = 6
 };
 
+enum BattlegroundNACreatureTypes
+{
+    BG_NA_CREATURE_NEXUS        = 0,
+    BG_NA_CREATURE_MAX          = 1
+};
+
 enum BattlegroundNAGameObjects
 {
     BG_NA_OBJECT_TYPE_DOOR_1    = 183978,
@@ -39,6 +45,11 @@ enum BattlegroundNAGameObjects
     BG_NA_OBJECT_TYPE_DOOR_4    = 183979,
     BG_NA_OBJECT_TYPE_BUFF_1    = 184663,
     BG_NA_OBJECT_TYPE_BUFF_2    = 184664
+};
+
+enum BattlegroundNACreatures
+{
+    BG_NA_CREATURE_TYPE_NEXUS   = 900001
 };
 
 inline constexpr Seconds BG_NA_REMOVE_DOORS_TIMER    = 5s;
@@ -58,11 +69,13 @@ class BattlegroundNA : public Arena
         void StartingEventOpenDoors() override;
 
         void HandleAreaTrigger(Player* Source, uint32 Trigger) override;
+        void HandleKillUnit(Creature* creature, Player* killer) override;
         bool SetupBattleground() override;
         void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
 
     private:
         void PostUpdateImpl(uint32 diff) override;
+        void CheckWinConditions() override;
 
         EventMap _events;
 };
