@@ -16,6 +16,16 @@ enum class Team
     Red
 };
 
+enum class MatchState
+{
+    None,
+    Queued,
+    Invited,
+    Preparing,
+    InProgress,
+    Finished
+};
+
 enum Constants
 {
     NpcTextDefault = 1,
@@ -87,6 +97,26 @@ inline uint32 GetWinnerTeamIdForDestroyedNexus(uint32 nexusEntry)
 inline bool IsOwnNexus(uint32 playerTeamId, uint32 nexusEntry)
 {
     return playerTeamId == GetTeamIdForNexusEntry(nexusEntry);
+}
+
+inline char const* GetMatchStateName(MatchState state)
+{
+    switch (state)
+    {
+        case MatchState::Queued:
+            return "queued";
+        case MatchState::Invited:
+            return "invited";
+        case MatchState::Preparing:
+            return "preparing";
+        case MatchState::InProgress:
+            return "in_progress";
+        case MatchState::Finished:
+            return "finished";
+        case MatchState::None:
+        default:
+            return "none";
+    }
 }
 }
 

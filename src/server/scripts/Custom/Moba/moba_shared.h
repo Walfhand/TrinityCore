@@ -27,6 +27,7 @@ extern std::size_t const HeroKitCount;
 void ApplyHeroKit(Player* player, HeroKit const& kit);
 void ResetForMatch(Player* player);
 void QueueSoloNexusTest(Player* player);
+void AbandonPlayerMatch(Player* player);
 bool CompleteSoloNexusObjective(Player* player);
 }
 
