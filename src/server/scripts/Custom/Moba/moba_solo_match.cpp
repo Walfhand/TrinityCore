@@ -3,6 +3,7 @@
  */
 
 #include "moba_shared.h"
+#include "moba_match_mgr.h"
 
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
@@ -12,62 +13,13 @@
 #include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
-#include "Random.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
-
-#include <unordered_map>
 
 namespace Moba
 {
 namespace
 {
-struct MatchRecord
-{
-    MatchState State = MatchState::None;
-    uint32 InstanceId = 0;
-    uint32 TeamId = InvalidTeamId;
-    BattlegroundQueueTypeId QueueId = BATTLEGROUND_QUEUE_NONE;
-};
-
-std::unordered_map<uint64, MatchRecord> PlayerMatches;
-
-uint64 GetPlayerKey(Player const* player)
-{
-    return player->GetGUID().GetCounter();
-}
-
-void SetMatchState(Player* player, MatchRecord& record, MatchState state)
-{
-    record.State = state;
-    TC_LOG_INFO("scripts", "MOBA match: player {} state {}", player->GetName(), GetMatchStateName(state));
-}
-
-uint32 CountAssignedPlayers(uint32 teamId)
-{
-    uint32 count = 0;
-
-    for (auto const& [_, record] : PlayerMatches)
-        if (record.TeamId == teamId && record.State != MatchState::None && record.State != MatchState::Finished)
-            ++count;
-
-    return count;
-}
-
-uint32 SelectAutoTeam()
-{
-    uint32 const blueCount = CountAssignedPlayers(BlueTeamId);
-    uint32 const redCount = CountAssignedPlayers(RedTeamId);
-
-    if (blueCount == redCount)
-        return urand(0, 1) == 0 ? BlueTeamId : RedTeamId;
-
-    if (blueCount < redCount)
-        return BlueTeamId;
-
-    return RedTeamId;
-}
-
 BattlegroundQueueTypeId GetPrototypeQueueTypeId(PvPDifficultyEntry const* bracketEntry)
 {
     return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_NA, bracketEntry->GetBracketId(), 0);
@@ -78,59 +30,9 @@ BattlegroundQueueTypeId GetArenaCleanupQueueTypeId(PvPDifficultyEntry const* bra
     return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_AA, bracketEntry->GetBracketId(), ARENA_TYPE_2v2);
 }
 
-void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId)
-{
-    if (queueId == BATTLEGROUND_QUEUE_NONE)
-        return;
-
-    uint32 const queueSlot = player->GetBattlegroundQueueIndex(queueId);
-    if (queueSlot < PLAYER_MAX_BATTLEGROUND_QUEUES)
-    {
-        WorldPackets::Battleground::BattlefieldStatusNone battlefieldStatus;
-        BattlegroundMgr::BuildBattlegroundStatusNone(&battlefieldStatus, queueSlot);
-        player->SendDirectMessage(battlefieldStatus.Write());
-    }
-
-    BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(queueId);
-    GroupQueueInfo ginfo;
-    if (queue.GetPlayerGroupInfoData(player->GetGUID(), &ginfo))
-        queue.RemovePlayer(player->GetGUID(), true);
-
-    player->RemoveBattlegroundQueueId(queueId);
-}
-
 void ClearPrototypeQueues(Player* player, PvPDifficultyEntry const* bracketEntry)
 {
-    ClearQueueStatus(player, GetPrototypeQueueTypeId(bracketEntry));
-    ClearQueueStatus(player, GetArenaCleanupQueueTypeId(bracketEntry));
-}
-
-bool HasActiveMatchState(Player* player)
-{
-    auto itr = PlayerMatches.find(GetPlayerKey(player));
-    if (itr == PlayerMatches.end())
-        return false;
-
-    if (player->InBattleground() || player->InBattlegroundQueue())
-        return true;
-
-    TC_LOG_INFO("scripts", "MOBA match: clearing stale state {} for player {}", GetMatchStateName(itr->second.State), player->GetName());
-    PlayerMatches.erase(itr);
-    return false;
-}
-
-void ClearPlayerMatch(Player* player, char const* reason)
-{
-    if (!player)
-        return;
-
-    auto itr = PlayerMatches.find(GetPlayerKey(player));
-    if (itr == PlayerMatches.end())
-        return;
-
-    TC_LOG_INFO("scripts", "MOBA match: player {} cleared from state {} ({})", player->GetName(), GetMatchStateName(itr->second.State), reason);
-    ClearQueueStatus(player, itr->second.QueueId);
-    PlayerMatches.erase(itr);
+    ClearQueueStatuses(player, GetPrototypeQueueTypeId(bracketEntry), GetArenaCleanupQueueTypeId(bracketEntry));
 }
 
 bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
@@ -155,11 +57,6 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
         return false;
     }
 
-    MatchRecord& record = PlayerMatches[GetPlayerKey(player)];
-    SetMatchState(player, record, MatchState::Queued);
-    record.TeamId = SelectAutoTeam();
-    TC_LOG_INFO("scripts", "MOBA match: player {} assigned to {} team", player->GetName(), record.TeamId == BlueTeamId ? "blue" : "red");
-
     ResetForMatch(player);
 
     Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_NA, bracketEntry, ARENA_TYPE_2v2, false);
@@ -167,26 +64,26 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
     {
         TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed for {}", player->GetName());
         player->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
-        ClearPlayerMatch(player, "battleground creation failed");
         return false;
     }
 
-    record.InstanceId = bg->GetInstanceID();
-    bg->StartBattleground();
+    // Keep the arena in queue status while the native popup is pending.
+    // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
+    bg->SetStatus(STATUS_WAIT_QUEUE);
 
     BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
-    record.QueueId = bgQueueTypeId;
+    PlayerMatchAssignment const assignment = CreateSoloMatch(player, bg->GetInstanceID(), bgQueueTypeId);
     BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
     GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
     if (!ginfo)
     {
         TC_LOG_ERROR("scripts", "MOBA match: AddGroup failed for {}", player->GetName());
         player->GetSession()->SendNotification("Erreur prototype : entree en file refusee.");
-        ClearPlayerMatch(player, "queue add failed");
+        AbandonPlayerMatch(player);
         return false;
     }
 
-    ginfo->Team = ::Team(record.TeamId);
+    ginfo->Team = ::Team(assignment.TeamId);
     ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
     ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
 
@@ -196,19 +93,19 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
         TC_LOG_ERROR("scripts", "MOBA match: no free queue slot for {}", player->GetName());
         player->GetSession()->SendNotification("Erreur prototype : aucune file disponible.");
         bgQueue.RemovePlayer(player->GetGUID(), false);
-        ClearPlayerMatch(player, "no queue slot");
+        AbandonPlayerMatch(player);
         return false;
     }
 
     player->SetInviteForBattlegroundQueueType(bgQueueTypeId, bg->GetInstanceID());
-    bg->IncreaseInvitedCount(record.TeamId);
+    bg->IncreaseInvitedCount(assignment.TeamId);
 
     uint32 const avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
     WorldPackets::Battleground::BattlefieldStatusQueued queuedStatus;
     BattlegroundMgr::BuildBattlegroundStatusQueued(&queuedStatus, bg, queueSlot, ginfo->JoinTime, bgQueueTypeId, avgTime);
     player->SendDirectMessage(queuedStatus.Write());
 
-    SetMatchState(player, record, MatchState::Invited);
+    SetPlayerMatchState(player, MatchState::Invited);
 
     WorldPackets::Battleground::BattlefieldStatusNeedConfirmation battlefieldStatus;
     BattlegroundMgr::BuildBattlegroundStatusNeedConfirmation(&battlefieldStatus, bg, queueSlot, INVITE_ACCEPT_WAIT_TIME, bgQueueTypeId);
@@ -218,18 +115,6 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
     player->GetSession()->SendNotification("Match trouve. Accepte la popup pour entrer.");
     return true;
 }
-}
-
-void MarkPlayerMatchInProgress(Player* player)
-{
-    auto itr = PlayerMatches.find(GetPlayerKey(player));
-    if (itr == PlayerMatches.end())
-        return;
-
-    if (!player->InBattleground())
-        return;
-
-    SetMatchState(player, itr->second, MatchState::InProgress);
 }
 
 void QueueSoloNexusTest(Player* player)
@@ -251,11 +136,6 @@ void QueueSoloNexusTest(Player* player)
     }
 
     InviteSoloTestMatch(player, bracketEntry);
-}
-
-void AbandonPlayerMatch(Player* player)
-{
-    ClearPlayerMatch(player, "player abandoned");
 }
 
 bool CompleteSoloNexusObjective(Player* /*player*/)
