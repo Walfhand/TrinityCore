@@ -43,7 +43,7 @@ void SetMatchState(Player* player, MatchRecord& record, MatchState state)
 
 BattlegroundQueueTypeId GetPrototypeQueueTypeId(PvPDifficultyEntry const* bracketEntry)
 {
-    return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_NA, bracketEntry->GetBracketId(), ARENA_TYPE_2v2);
+    return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_NA, bracketEntry->GetBracketId(), 0);
 }
 
 BattlegroundQueueTypeId GetArenaCleanupQueueTypeId(PvPDifficultyEntry const* bracketEntry)
@@ -151,6 +151,12 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
 
     player->SetInviteForBattlegroundQueueType(bgQueueTypeId, bg->GetInstanceID());
     bg->IncreaseInvitedCount(record.TeamId);
+
+    uint32 const avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
+    WorldPackets::Battleground::BattlefieldStatusQueued queuedStatus;
+    BattlegroundMgr::BuildBattlegroundStatusQueued(&queuedStatus, bg, queueSlot, ginfo->JoinTime, bgQueueTypeId, avgTime);
+    player->SendDirectMessage(queuedStatus.Write());
+
     SetMatchState(player, record, MatchState::Invited);
 
     WorldPackets::Battleground::BattlefieldStatusNeedConfirmation battlefieldStatus;
