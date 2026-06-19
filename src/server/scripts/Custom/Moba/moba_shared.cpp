@@ -4,60 +4,201 @@
 
 #include "moba_shared.h"
 
+#include "Item.h"
+#include "Log.h"
 #include "Player.h"
 #include "SpellHistory.h"
 #include "WorldSession.h"
 
+#include <vector>
+
 namespace Moba
 {
-HeroKit const HeroKits[] =
+Archetype const Archetypes[] =
 {
     {
-        "Briseur - engage / controle",
-        "Kit Briseur applique.",
-        { 100, 78, 1715, 6673, 0 } // Charge, Heroic Strike, Hamstring, Battle Shout
+        "Briseur - bruiser melee (Rage)",
+        "Archetype Briseur applique.",
+        POWER_RAGE,
+        // Charge, Heroic Strike, Hamstring, Battle Shout, Thunder Clap
+        // + the 3 warrior stances (so abilities are usable) + Swords + Shield proficiency
+        { 100, 78, 1715, 6673, 6343, 2457, 71, 2458, 201, 9116, SPELL_MOBA_RAGE_GUARD, 0 },
+        { 727, 7108, 0 },                         // Notched Shortsword + Infantry Shield
+        { SKILL_SWORDS, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
+        2457                                      // enter Battle Stance on pick
     },
     {
-        "Arcaniste - burst / kite",
-        "Kit Arcaniste applique.",
-        { 116, 2136, 122, 1953, 0 } // Frostbolt, Fire Blast, Frost Nova, Blink
+        "Arcaniste - mage burst (Mana)",
+        "Archetype Arcaniste applique.",
+        POWER_MANA,
+        // Frostbolt, Fire Blast, Frost Nova, Blink + Staves proficiency
+        { 116, 2136, 122, 1953, 227, 0, 0, 0 },
+        { 1933, 0, 0 },                           // Staff of Conjuring
+        { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
+        0
     },
     {
-        "Gardien - sustain / support",
-        "Kit Gardien applique.",
-        { 635, 21084, 20271, 465, 0 } // Holy Light, Seal of Righteousness, Judgement, Devotion Aura
+        "Gardien - tank/support (Mana)",
+        "Archetype Gardien applique.",
+        POWER_MANA,
+        // Holy Light, Seal of Righteousness, Judgement, Devotion Aura, Hammer of Justice + Maces + Shield
+        { 635, 21084, 20271, 465, 853, 198, 9116, 0 },
+        { 2075, 7108, 0 },                        // Priest's Mace + Infantry Shield
+        { SKILL_MACES, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
+        0
+    },
+    {
+        "Assassin - melee burst (Energie)",
+        "Archetype Assassin applique.",
+        POWER_ENERGY,
+        // Sinister Strike, Eviscerate, Kick, Sprint, Stealth + Daggers proficiency
+        { 1752, 2098, 1766, 2983, 1784, 1180, 0, 0 },
+        { 1917, 0, 0 },                           // Jeweled Dagger
+        { SKILL_DAGGERS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
+        0
+    },
+    {
+        "Rodeur - marksman distance (Mana)",
+        "Archetype Rodeur applique.",
+        POWER_MANA,
+        // Auto Shot, Arcane Shot, Concussive Shot, Multi-Shot, Hunter's Mark + Bows proficiency
+        { 75, 3044, 5116, 2643, 1130, 264, 0, 0 },
+        { 8180, 0, 0 },                           // Hunting Bow
+        { SKILL_BOWS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
+        0
+    },
+    {
+        "Sorcier - DoT distance (Mana)",
+        "Archetype Sorcier applique.",
+        POWER_MANA,
+        // Shadow Bolt, Corruption, Immolate, Fear, Curse of Agony + Staves proficiency
+        { 686, 172, 348, 5782, 980, 227, 0, 0 },
+        { 1933, 0, 0 },                           // Staff of Conjuring
+        { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
+        0
     }
 };
 
-std::size_t const HeroKitCount = sizeof(HeroKits) / sizeof(HeroKits[0]);
+std::size_t const ArchetypeCount = sizeof(Archetypes) / sizeof(Archetypes[0]);
 
 namespace
 {
-void RemovePrototypeSpells(Player* player)
+// Remove every learned spell so no trace of the original class remains.
+void WipeSpellbook(Player* player)
 {
-    for (std::size_t i = 0; i < HeroKitCount; ++i)
-        for (uint32 spellId : HeroKits[i].Spells)
-            if (spellId && player->HasSpell(spellId))
-                player->RemoveSpell(spellId, false, false);
+    std::vector<uint32> spellIds;
+    spellIds.reserve(player->GetSpellMap().size());
+    for (auto const& spellPair : player->GetSpellMap())
+        spellIds.push_back(spellPair.first);
+
+    for (uint32 spellId : spellIds)
+        player->RemoveSpell(spellId, false, false);
+}
+
+// Free the weapon slots so the archetype's starter gear can be equipped.
+void ClearWeaponSlots(Player* player)
+{
+    for (uint8 slot : { EQUIPMENT_SLOT_MAINHAND, EQUIPMENT_SLOT_OFFHAND, EQUIPMENT_SLOT_RANGED })
+        if (player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            player->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
+}
+
+void EquipStarterItem(Player* player, uint32 itemId)
+{
+    if (!itemId)
+        return;
+
+    uint16 dest = 0;
+    if (player->CanEquipNewItem(NULL_SLOT, dest, itemId, false) == EQUIP_ERR_OK)
+        player->EquipNewItem(dest, itemId, true);
+    else
+        TC_LOG_ERROR("scripts", "MOBA archetype: cannot equip item {} on {}", itemId, player->GetName());
+}
+
+void ConfigurePower(Player* player, Powers power, uint32 maxPower, uint32 currentPower)
+{
+    player->SetMaxPower(power, maxPower);
+    player->SetPower(power, currentPower);
+}
+
+// Swap the player's resource to the archetype's power and keep inactive resources hidden.
+void ApplyArchetypePower(Player* player, Powers power)
+{
+    player->SetPowerType(power);
+
+    switch (power)
+    {
+        case POWER_MANA:
+            ConfigurePower(player, POWER_MANA, 1000, 1000);
+            ConfigurePower(player, POWER_RAGE, 0, 0);
+            ConfigurePower(player, POWER_ENERGY, 0, 0);
+            break;
+        case POWER_RAGE:
+            ConfigurePower(player, POWER_MANA, 0, 0);
+            ConfigurePower(player, POWER_RAGE, 1000, 0); // 100 rage shown
+            ConfigurePower(player, POWER_ENERGY, 0, 0);
+            break;
+        case POWER_ENERGY:
+            ConfigurePower(player, POWER_MANA, 0, 0);
+            ConfigurePower(player, POWER_RAGE, 0, 0);
+            ConfigurePower(player, POWER_ENERGY, 100, 100);
+            break;
+        default:
+            break;
+    }
+}
+
+void MaxArchetypeSkills(Player* player, Archetype const& archetype)
+{
+    uint16 const maxSkill = player->GetMaxSkillValueForLevel();
+
+    for (uint32 skillId : archetype.Skills)
+    {
+        if (!skillId)
+            continue;
+
+        if (skillId == SKILL_SHIELD)
+            player->SetSkill(skillId, 0, 1, 1);
+        else
+            player->SetSkill(skillId, 0, maxSkill, maxSkill);
+    }
+
+    player->UpdateWeaponsSkillsToMaxSkillsForLevel();
 }
 }
 
-void ApplyHeroKit(Player* player, HeroKit const& kit)
+void ApplyArchetype(Player* player, Archetype const& archetype)
 {
     if (player->GetLevel() != PrototypeLevel)
         player->GiveLevel(PrototypeLevel);
 
     player->SetFreeTalentPoints(0);
-    RemovePrototypeSpells(player);
 
-    for (uint32 spellId : kit.Spells)
+    WipeSpellbook(player);
+
+    // Learn the kit (incl. weapon-proficiency spells) BEFORE equipping, otherwise the
+    // base class still gates which weapons can be equipped (e.g. a warlock and a bow).
+    for (uint32 spellId : archetype.Spells)
         if (spellId)
             player->LearnSpell(spellId, false);
+
+    MaxArchetypeSkills(player, archetype);
+
+    ClearWeaponSlots(player);
+    for (uint32 itemId : archetype.Weapons)
+        EquipStarterItem(player, itemId);
+
+    ApplyArchetypePower(player, archetype.Power);
+
+    // Enter a starting form/stance if the archetype needs one (e.g. warrior Battle Stance),
+    // otherwise its stance-gated abilities stay unusable.
+    if (archetype.OnApplyCast)
+        player->CastSpell(player, archetype.OnApplyCast, true);
 
     ResetForMatch(player);
     player->SaveToDB();
 
-    player->GetSession()->SendNotification("%s", kit.Message);
+    player->GetSession()->SendNotification("%s", archetype.Message);
 }
 
 void ResetForMatch(Player* player)
@@ -66,9 +207,11 @@ void ResetForMatch(Player* player)
         player->ResurrectPlayer(1.0f);
 
     player->SetHealth(player->GetMaxHealth());
-    player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
-    player->SetPower(POWER_ENERGY, player->GetMaxPower(POWER_ENERGY));
-    player->SetPower(POWER_RAGE, 0);
+    player->SetPower(player->GetPowerType(), player->GetMaxPower(player->GetPowerType()));
+
+    if (player->GetPowerType() == POWER_RAGE)
+        player->SetPower(POWER_RAGE, 0);
+
     player->GetSpellHistory()->ResetAllCooldowns();
 }
 }

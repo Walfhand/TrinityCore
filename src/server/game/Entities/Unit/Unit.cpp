@@ -5401,6 +5401,9 @@ void Unit::UpdateDisplayPower()
             break;
         case FORM_BEAR:
         case FORM_DIREBEAR:
+        case FORM_BATTLESTANCE:
+        case FORM_DEFENSIVESTANCE:
+        case FORM_BERSERKERSTANCE:
             displayPower = POWER_RAGE;
             break;
         case FORM_TRAVEL:

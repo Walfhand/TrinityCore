@@ -22,8 +22,8 @@ public:
 
         bool OnGossipHello(Player* player) override
         {
-            for (std::size_t i = 0; i < Moba::HeroKitCount; ++i)
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Moba::HeroKits[i].Name, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + i);
+            for (std::size_t i = 0; i < Moba::ArchetypeCount; ++i)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Moba::Archetypes[i].Name, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + i);
 
             uint32 const teamSize = Moba::GetConfiguredTeamSize();
             std::string const matchLabel = "Rejoindre une partie " + std::to_string(teamSize) + "v" + std::to_string(teamSize) + " - Nexus";
@@ -57,11 +57,11 @@ public:
             if (action < GOSSIP_ACTION_INFO_DEF)
                 return true;
 
-            uint32 const kitIndex = action - GOSSIP_ACTION_INFO_DEF;
-            if (kitIndex >= Moba::HeroKitCount)
+            uint32 const archetypeIndex = action - GOSSIP_ACTION_INFO_DEF;
+            if (archetypeIndex >= Moba::ArchetypeCount)
                 return true;
 
-            Moba::ApplyHeroKit(player, Moba::HeroKits[kitIndex]);
+            Moba::ApplyArchetype(player, Moba::Archetypes[archetypeIndex]);
             return true;
         }
     };
