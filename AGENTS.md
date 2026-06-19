@@ -177,6 +177,83 @@ docker/client/WINDOWS_World_of_Warcraft_335a/WINDOWS_World of Warcraft 335a/Data
 
 After changing DBC client patches, close the client and delete the client `Cache` folder before retesting.
 
+## Guerilla Map MPQ Packaging
+
+Source terrain files live outside the repo:
+
+```text
+/home/walfhand/Documents/wow-maps/guerilla/
+```
+
+The custom map ID is `900`. The expected client archive paths are:
+
+```text
+DBFilesClient\Map.dbc
+World\Maps\guerilla\guerilla.wdt
+World\Maps\guerilla\guerilla.wdl
+World\Maps\guerilla\guerilla_27_25.adt
+World\Maps\guerilla\guerilla_27_26.adt
+World\Maps\guerilla\guerilla_28_25.adt
+World\Maps\guerilla\guerilla_28_26.adt
+```
+
+Package them into an MPQ with StormLib as `patch-guerilla.MPQ`, then install it into the Docker client as:
+
+```text
+docker/client/WINDOWS_World_of_Warcraft_335a/WINDOWS_World of Warcraft 335a/Data/patch-4.MPQ
+```
+
+Keep a generated copy at:
+
+```text
+/home/walfhand/Documents/wow-maps/patch-guerilla.MPQ
+```
+
+The server-side `Map.dbc` must contain map ID `900` with directory `guerilla`, and the generated server map files must be installed in `docker/data/maps/`:
+
+```text
+9002527.map
+9002528.map
+9002627.map
+9002628.map
+```
+
+`AreaTable.dbc` must also include the parent zone `9000` (`Guerilla`) and the current per-tile subzones:
+
+```text
+9001 Guerilla Nord-Ouest -> guerilla_27_25.adt -> 9002527.map
+9002 Guerilla Nord-Est  -> guerilla_27_26.adt -> 9002528.map
+9003 Guerilla Sud-Ouest -> guerilla_28_25.adt -> 9002627.map
+9004 Guerilla Sud-Est   -> guerilla_28_26.adt -> 9002628.map
+```
+
+Each ADT stores these zone IDs in every MCNK `areaid`; after changing them, rebuild `patch-guerilla.MPQ`, clear the client `Cache`, regenerate `900*.map` with `mapextractor`, and restart `worldserver`.
+
+Before replacing the client patch, verify:
+
+- The MPQ is reported by `file` as `MoPaQ (MPQ) archive`.
+- Listing the MPQ shows `DBFilesClient\Map.dbc`, `DBFilesClient\AreaTable.dbc`, the six map files above, plus optional internal files such as `(listfile)`.
+- The archived paths use backslashes and start with `World\Maps\guerilla\`.
+- The installed client copy matches the generated MPQ byte-for-byte, for example with `cmp -s`.
+
+The current generated patch was installed on June 19, 2026 as `Data/patch-4.MPQ`. It contains `DBFilesClient\Map.dbc`, `guerilla.wdt`, `guerilla.wdl`, and the four ADT tiles listed above. After restarting `worldserver`, teleport to the map in game with:
+
+```text
+.go grid 37 35 900
+```
+
+The world DB shortcut is tracked in:
+
+```text
+sql/custom/world/0003_guerilla_game_tele.sql
+```
+
+After applying that SQL and reloading `game_tele` or restarting `worldserver`, use:
+
+```text
+.tele guerilla
+```
+
 ## Recommended Next Implementation Step
 
 Create a `MobaPlayerState` or equivalent match-player state system.
