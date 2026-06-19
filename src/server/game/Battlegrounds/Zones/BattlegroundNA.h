@@ -19,6 +19,7 @@
 
 #include "Arena.h"
 #include "EventMap.h"
+#include "MobaLane.h"
 #include "MobaRules.h"
 
 enum BattlegroundNAObjectTypes
@@ -65,7 +66,8 @@ inline constexpr Seconds BG_NA_REMOVE_DOORS_TIMER    = 5s;
 
 enum BattlegroundNAEvents
 {
-    BG_NA_EVENT_REMOVE_DOORS    = 1
+    BG_NA_EVENT_REMOVE_DOORS     = 1,
+    BG_NA_EVENT_SPAWN_MOBA_WAVE  = 2
 };
 
 class BattlegroundNA : public Arena
@@ -88,8 +90,11 @@ class BattlegroundNA : public Arena
         void PostUpdateImpl(uint32 diff) override;
         void CheckWinConditions() override;
         void SpawnMobaNexuses();
+        void SpawnMobaMinionWave();
+        bool BuildMobaLaneConfig();
         uint32 GetWinnerForDestroyedNexus(Creature const* creature);
 
         EventMap _events;
+        Moba::LaneConfig _mobaLane;
 };
 #endif

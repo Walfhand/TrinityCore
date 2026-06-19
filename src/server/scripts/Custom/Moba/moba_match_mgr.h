@@ -9,6 +9,8 @@
 #include "MobaRules.h"
 #include "SharedDefines.h"
 
+#include <vector>
+
 class Player;
 
 namespace Moba
@@ -19,19 +21,13 @@ struct PlayerMatchAssignment
     uint32 TeamId = InvalidTeamId;
 };
 
-struct DuoMatchAssignments
-{
-    PlayerMatchAssignment First;
-    PlayerMatchAssignment Second;
-};
-
 void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId);
 void ClearQueueStatuses(Player* player, BattlegroundQueueTypeId firstQueueId, BattlegroundQueueTypeId secondQueueId);
 
 bool HasActiveMatchState(Player* player);
 void QueueWaitingPlayer(Player* player);
-Player* TakeWaitingOpponent(Player* player);
-DuoMatchAssignments CreateDuoMatch(Player* firstPlayer, Player* secondPlayer, uint32 instanceId, BattlegroundQueueTypeId queueId);
+std::vector<Player*> TakeWaitingPlayers(uint32 count);
+std::vector<PlayerMatchAssignment> CreateMatch(std::vector<Player*> const& players, uint32 blueCount, uint32 instanceId, BattlegroundQueueTypeId queueId);
 void SetPlayerMatchState(Player* player, MatchState state);
 void MarkPlayerMatchInProgress(Player* player);
 void AbandonPlayerMatch(Player* player);

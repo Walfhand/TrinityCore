@@ -9,6 +9,8 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 
+#include <string>
+
 class npc_moba_lobby : public CreatureScript
 {
 public:
@@ -23,7 +25,13 @@ public:
             for (std::size_t i = 0; i < Moba::HeroKitCount; ++i)
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, Moba::HeroKits[i].Name, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + i);
 
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Tag 1v1 - Test Nexus", GOSSIP_SENDER_MAIN, Moba::ActionJoinSoloTest);
+            uint32 const teamSize = Moba::GetConfiguredTeamSize();
+            std::string const matchLabel = "Rejoindre une partie " + std::to_string(teamSize) + "v" + std::to_string(teamSize) + " - Nexus";
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, matchLabel, GOSSIP_SENDER_MAIN, Moba::ActionJoinMatch);
+
+            if (Moba::IsDevSoloModeEnabled())
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "DEV: Match solo (instantane)", GOSSIP_SENDER_MAIN, Moba::ActionJoinDevSolo);
+
             SendGossipMenuFor(player, Moba::NpcTextDefault, me->GetGUID());
             return true;
         }
@@ -34,9 +42,15 @@ public:
             ClearGossipMenuFor(player);
             CloseGossipMenuFor(player);
 
-            if (action == Moba::ActionJoinSoloTest)
+            if (action == Moba::ActionJoinMatch)
             {
-                Moba::QueueSoloNexusTest(player);
+                Moba::QueueMobaMatch(player);
+                return true;
+            }
+
+            if (action == Moba::ActionJoinDevSolo)
+            {
+                Moba::QueueDevSoloTest(player);
                 return true;
             }
 

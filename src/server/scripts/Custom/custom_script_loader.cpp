@@ -17,6 +17,7 @@
 
 // This is where scripts' loading functions should be declared:
 void AddSC_moba_lobby();
+void AddSC_moba_minion();
 void AddSC_moba_nexus();
 void AddSC_moba_solo_match();
 
@@ -25,6 +26,7 @@ void AddSC_moba_solo_match();
 void AddCustomScripts()
 {
     AddSC_moba_lobby();
+    AddSC_moba_minion();
     AddSC_moba_nexus();
     AddSC_moba_solo_match();
 }

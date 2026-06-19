@@ -6,6 +6,7 @@
 
 #include "Battleground.h"
 #include "Creature.h"
+#include "Map.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "Unit.h"
@@ -34,6 +35,16 @@ public:
 
         void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
         {
+            if (Creature* creature = attacker ? attacker->ToCreature() : nullptr)
+            {
+                if (Moba::IsMinionEntry(creature->GetEntry()) &&
+                    Moba::GetTeamIdForMinionEntry(creature->GetEntry()) == Moba::GetTeamIdForNexusEntry(me->GetEntry()))
+                {
+                    damage = 0;
+                    return;
+                }
+            }
+
             Player* player = attacker ? attacker->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
             if (!player || !player->GetBattleground())
                 return;
@@ -54,6 +65,13 @@ public:
                 if (Battleground* bg = player->GetBattleground())
                 {
                     bg->HandleKillUnit(me, player);
+                    return;
+                }
+
+            if (BattlegroundMap* bgMap = me->GetMap()->ToBattlegroundMap())
+                if (Battleground* bg = bgMap->GetBG())
+                {
+                    bg->HandleKillUnit(me, nullptr);
                     return;
                 }
 

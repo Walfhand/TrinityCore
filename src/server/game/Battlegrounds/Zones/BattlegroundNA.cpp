@@ -18,6 +18,7 @@
 #include "BattlegroundNA.h"
 #include "Creature.h"
 #include "Log.h"
+#include "Map.h"
 #include "Pet.h"
 #include "Player.h"
 #include "WorldSession.h"
@@ -49,6 +50,10 @@ void BattlegroundNA::PostUpdateImpl(uint32 diff)
             case BG_NA_EVENT_REMOVE_DOORS:
                 for (uint32 i = BG_NA_OBJECT_DOOR_1; i <= BG_NA_OBJECT_DOOR_2; ++i)
                     DelObject(i);
+                break;
+            case BG_NA_EVENT_SPAWN_MOBA_WAVE:
+                SpawnMobaMinionWave();
+                _events.ScheduleEvent(BG_NA_EVENT_SPAWN_MOBA_WAVE, _mobaLane.WaveInterval);
                 break;
             default:
                 break;
@@ -101,6 +106,8 @@ void BattlegroundNA::StartingEventOpenDoors()
         SpawnBGObject(i, 60);
 
     SpawnMobaNexuses();
+    if (BuildMobaLaneConfig())
+        _events.ScheduleEvent(BG_NA_EVENT_SPAWN_MOBA_WAVE, _mobaLane.FirstWaveDelay);
 }
 
 void BattlegroundNA::SpawnMobaNexuses()
@@ -138,6 +145,26 @@ void BattlegroundNA::SpawnMobaNexuses()
     }
     else
         TC_LOG_ERROR("bg.battleground", "MOBA: Red Nexus spawn failed in Nagrand Arena BG instance {}", GetInstanceID());
+}
+
+void BattlegroundNA::SpawnMobaMinionWave()
+{
+    Moba::SpawnMinionWave(GetBgMap(), _mobaLane, GetInstanceID());
+}
+
+bool BattlegroundNA::BuildMobaLaneConfig()
+{
+    Position const* blueStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_BLUE));
+    Position const* redStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_RED));
+
+    if (!blueStart || !redStart)
+    {
+        TC_LOG_ERROR("bg.battleground", "MOBA: lane config failed, missing start positions in Nagrand Arena BG instance {}", GetInstanceID());
+        return false;
+    }
+
+    _mobaLane = Moba::BuildSingleLaneConfig("nagrand-test-lane", *blueStart, *redStart);
+    return true;
 }
 
 void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)

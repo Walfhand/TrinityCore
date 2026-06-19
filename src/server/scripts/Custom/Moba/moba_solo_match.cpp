@@ -9,12 +9,18 @@
 #include "BattlegroundMgr.h"
 #include "BattlegroundPackets.h"
 #include "BattlegroundQueue.h"
+#include "Config.h"
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
+#include "Random.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
+
+#include <algorithm>
+#include <utility>
+#include <vector>
 
 namespace Moba
 {
@@ -72,48 +78,70 @@ bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bg
     BattlegroundMgr::BuildBattlegroundStatusNeedConfirmation(&battlefieldStatus, bg, queueSlot, INVITE_ACCEPT_WAIT_TIME, bgQueueTypeId);
     player->SendDirectMessage(battlefieldStatus.Write());
 
-    player->GetSession()->SendNotification("Match 1v1 trouve. Accepte la popup pour entrer.");
+    player->GetSession()->SendNotification("Match trouve. Accepte la popup pour entrer.");
     return true;
 }
 
-bool InviteDuoMatch(Player* firstPlayer, Player* secondPlayer, PvPDifficultyEntry const* bracketEntry)
+void AbandonMatchPlayers(std::vector<Player*> const& players)
 {
-    ResetForMatch(firstPlayer);
-    ResetForMatch(secondPlayer);
+    for (Player* player : players)
+        AbandonPlayerMatch(player);
+}
+
+// Generic match launcher: the first `blueCount` players go Blue, the rest Red.
+// A single-player match (Red empty) is the dev-solo case.
+bool InviteMatch(std::vector<Player*> const& players, uint32 blueCount, PvPDifficultyEntry const* bracketEntry)
+{
+    if (players.empty())
+        return false;
+
+    for (Player* player : players)
+        ResetForMatch(player);
 
     Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_NA, bracketEntry, ARENA_TYPE_2v2, false);
     if (!bg)
     {
-        TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed for 1v1");
-        firstPlayer->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
-        secondPlayer->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
-        AbandonPlayerMatch(firstPlayer);
-        AbandonPlayerMatch(secondPlayer);
+        TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed");
+        for (Player* player : players)
+            player->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
+        AbandonMatchPlayers(players);
         return false;
     }
+
+    // Nagrand is an arena, so CreateNewBattleground caps the team size from the
+    // arena type. Override it so the configured MOBA team size fits the instance.
+    uint32 const redCount = uint32(players.size()) - blueCount;
+    uint32 const maxPerTeam = std::max({ blueCount, redCount, 1u });
+    bg->SetMaxPlayersPerTeam(maxPerTeam);
+    bg->SetMaxPlayers(maxPerTeam * 2);
 
     // Keep the arena in queue status while the native popup is pending.
     // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
     bg->SetStatus(STATUS_WAIT_QUEUE);
 
     BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
-    DuoMatchAssignments const assignments = CreateDuoMatch(firstPlayer, secondPlayer, bg->GetInstanceID(), bgQueueTypeId);
+    std::vector<PlayerMatchAssignment> const assignments = CreateMatch(players, blueCount, bg->GetInstanceID(), bgQueueTypeId);
     BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
 
-    if (!InvitePlayerToMatch(firstPlayer, bg, bgQueue, bgQueueTypeId, bracketEntry, assignments.First)
-        || !InvitePlayerToMatch(secondPlayer, bg, bgQueue, bgQueueTypeId, bracketEntry, assignments.Second))
+    for (std::size_t i = 0; i < players.size(); ++i)
     {
-        AbandonPlayerMatch(firstPlayer);
-        AbandonPlayerMatch(secondPlayer);
-        return false;
+        if (!InvitePlayerToMatch(players[i], bg, bgQueue, bgQueueTypeId, bracketEntry, assignments[i]))
+        {
+            AbandonMatchPlayers(players);
+            return false;
+        }
     }
 
-    TC_LOG_INFO("scripts", "MOBA match: players {} and {} invited to 1v1 Nagrand Arena BG instance {}",
-        firstPlayer->GetName(), secondPlayer->GetName(), bg->GetInstanceID());
+    // Register the BG before the client can accept the native popup. The port
+    // handler looks up the instance by id before teleporting the player.
+    bg->StartBattleground();
+
+    TC_LOG_INFO("scripts", "MOBA match: {} players invited to Nagrand Arena BG instance {} (blue {} / red {})",
+        players.size(), bg->GetInstanceID(), blueCount, redCount);
     return true;
 }
 
-bool QueueOneVsOneMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
+bool CanQueuePrototypeMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
 {
     if (player->InBattleground())
     {
@@ -135,23 +163,48 @@ bool QueueOneVsOneMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
         return false;
     }
 
-    if (Player* opponent = TakeWaitingOpponent(player))
-        return InviteDuoMatch(opponent, player, bracketEntry);
-
-    QueueWaitingPlayer(player);
-    player->GetSession()->SendNotification("Tu es en file 1v1. En attente d'un adversaire.");
     return true;
 }
+
+bool QueueMatchmaking(Player* player, PvPDifficultyEntry const* bracketEntry)
+{
+    if (!CanQueuePrototypeMatch(player, bracketEntry))
+        return false;
+
+    uint32 const teamSize = GetConfiguredTeamSize();
+
+    QueueWaitingPlayer(player);
+
+    std::vector<Player*> players = TakeWaitingPlayers(teamSize * 2);
+    if (players.empty())
+    {
+        player->GetSession()->SendNotification("Tu es en file %uv%u. En attente d'autres joueurs.", teamSize, teamSize);
+        return true;
+    }
+
+    // Shuffle so queue order does not decide team composition.
+    for (std::size_t i = players.size(); i > 1; --i)
+        std::swap(players[i - 1], players[urand(0, uint32(i - 1))]);
+
+    return InviteMatch(players, teamSize, bracketEntry);
 }
 
-void QueueSoloNexusTest(Player* player)
+bool QueueDevSoloMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
+{
+    if (!CanQueuePrototypeMatch(player, bracketEntry))
+        return false;
+
+    return InviteMatch({ player }, 1, bracketEntry);
+}
+
+PvPDifficultyEntry const* ResolvePrototypeBracket(Player* player)
 {
     Battleground* bgTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_NA);
     if (!bgTemplate)
     {
         TC_LOG_ERROR("scripts", "MOBA solo: Nagrand Arena template introuvable");
         player->GetSession()->SendNotification("Erreur prototype : template arene introuvable.");
-        return;
+        return nullptr;
     }
 
     PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgTemplate->GetMapId(), player->GetLevel());
@@ -159,10 +212,44 @@ void QueueSoloNexusTest(Player* player)
     {
         TC_LOG_ERROR("scripts", "MOBA solo: no PvP bracket for player {} level {} map {}", player->GetName(), player->GetLevel(), bgTemplate->GetMapId());
         player->GetSession()->SendNotification("Erreur prototype : bracket PvP introuvable.");
+        return nullptr;
+    }
+
+    return bracketEntry;
+}
+}
+
+bool IsDevSoloModeEnabled()
+{
+    return sConfigMgr->GetBoolDefault("Moba.DevSoloMode", false);
+}
+
+uint32 GetConfiguredTeamSize()
+{
+    int32 const configured = sConfigMgr->GetIntDefault("Moba.TeamSize", 1);
+    if (configured < 1)
+        return 1;
+    if (configured > int32(MaxTeamSize))
+        return MaxTeamSize;
+    return uint32(configured);
+}
+
+void QueueMobaMatch(Player* player)
+{
+    if (PvPDifficultyEntry const* bracketEntry = ResolvePrototypeBracket(player))
+        QueueMatchmaking(player, bracketEntry);
+}
+
+void QueueDevSoloTest(Player* player)
+{
+    if (!IsDevSoloModeEnabled())
+    {
+        player->GetSession()->SendNotification("Mode dev solo desactive (Moba.DevSoloMode).");
         return;
     }
 
-    QueueOneVsOneMatch(player, bracketEntry);
+    if (PvPDifficultyEntry const* bracketEntry = ResolvePrototypeBracket(player))
+        QueueDevSoloMatch(player, bracketEntry);
 }
 
 bool CompleteSoloNexusObjective(Player* /*player*/)

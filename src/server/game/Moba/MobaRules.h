@@ -32,9 +32,13 @@ enum Constants
     PrototypeLevel = 10,
     NpcBlueNexus = 900001,
     NpcRedNexus = 900002,
-    ActionJoinSoloTest = 1100,
+    NpcBlueMinion = 900003,
+    NpcRedMinion = 900004,
+    ActionJoinMatch = 1100,
+    ActionJoinDevSolo = 1101,
     MapGmIsland = 1,
-    MapSoloTest = 36
+    MapSoloTest = 36,
+    MaxTeamSize = 20
 };
 
 inline constexpr uint32 BlueTeamId = ALLIANCE;
@@ -51,9 +55,25 @@ inline bool IsNexusEntry(uint32 entry)
     return entry == NpcBlueNexus || entry == NpcRedNexus;
 }
 
+inline bool IsMinionEntry(uint32 entry)
+{
+    return entry == NpcBlueMinion || entry == NpcRedMinion;
+}
+
 inline uint32 GetTeamId(Team team)
 {
     return team == Team::Blue ? BlueTeamId : RedTeamId;
+}
+
+inline uint32 GetEnemyTeamId(uint32 teamId)
+{
+    if (teamId == BlueTeamId)
+        return RedTeamId;
+
+    if (teamId == RedTeamId)
+        return BlueTeamId;
+
+    return InvalidTeamId;
 }
 
 inline uint32 GetFactionForTeamId(uint32 teamId)
@@ -78,6 +98,28 @@ inline uint32 GetTeamIdForNexusEntry(uint32 nexusEntry)
         return BlueTeamId;
 
     if (nexusEntry == NpcRedNexus)
+        return RedTeamId;
+
+    return InvalidTeamId;
+}
+
+inline uint32 GetMinionEntryForTeamId(uint32 teamId)
+{
+    if (teamId == BlueTeamId)
+        return NpcBlueMinion;
+
+    if (teamId == RedTeamId)
+        return NpcRedMinion;
+
+    return 0;
+}
+
+inline uint32 GetTeamIdForMinionEntry(uint32 minionEntry)
+{
+    if (minionEntry == NpcBlueMinion)
+        return BlueTeamId;
+
+    if (minionEntry == NpcRedMinion)
         return RedTeamId;
 
     return InvalidTeamId;

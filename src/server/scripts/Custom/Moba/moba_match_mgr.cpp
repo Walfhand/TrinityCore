@@ -220,65 +220,71 @@ void QueueWaitingPlayer(Player* player)
     TC_LOG_INFO("scripts", "MOBA match: player {} queued for 1v1", player->GetName());
 }
 
-Player* TakeWaitingOpponent(Player* player)
+std::vector<Player*> TakeWaitingPlayers(uint32 count)
 {
-    uint64 const playerKey = GetPlayerKey(player);
+    if (count == 0)
+        return {};
 
+    std::vector<Player*> ready;
+
+    // Walk the queue once, dropping stale entries and collecting valid players in order.
     for (auto itr = WaitingPlayers.begin(); itr != WaitingPlayers.end();)
     {
-        uint64 const opponentKey = *itr;
-        if (opponentKey == playerKey)
+        uint64 const waitingKey = *itr;
+        auto recordItr = PlayerMatches.find(waitingKey);
+        Player* waiting = FindOnlinePlayer(waitingKey);
+        if (recordItr == PlayerMatches.end() || !IsWaitingRecord(recordItr->second) || !waiting || waiting->InBattleground() || waiting->InBattlegroundQueue())
         {
             itr = WaitingPlayers.erase(itr);
-            continue;
-        }
 
-        auto recordItr = PlayerMatches.find(opponentKey);
-        Player* opponent = FindOnlinePlayer(opponentKey);
-        if (recordItr == PlayerMatches.end() || !IsWaitingRecord(recordItr->second) || !opponent || opponent->InBattleground() || opponent->InBattlegroundQueue())
-        {
-            if (opponent)
-                ClearPlayerMatch(opponent, "stale waiting queue");
+            if (waiting)
+                ClearPlayerMatch(waiting, "stale waiting queue");
             else if (recordItr != PlayerMatches.end())
                 PlayerMatches.erase(recordItr);
 
-            itr = WaitingPlayers.erase(itr);
             continue;
         }
 
-        WaitingPlayers.erase(itr);
-        return opponent;
+        ready.push_back(waiting);
+        ++itr;
     }
 
-    return nullptr;
+    // Not enough players to fill a match: leave everyone in the queue.
+    if (ready.size() < count)
+        return {};
+
+    ready.resize(count);
+    for (Player* player : ready)
+        WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), GetPlayerKey(player)), WaitingPlayers.end());
+
+    return ready;
 }
 
-DuoMatchAssignments CreateDuoMatch(Player* firstPlayer, Player* secondPlayer, uint32 instanceId, BattlegroundQueueTypeId queueId)
+std::vector<PlayerMatchAssignment> CreateMatch(std::vector<Player*> const& players, uint32 blueCount, uint32 instanceId, BattlegroundQueueTypeId queueId)
 {
     uint32 const matchId = NextMatchId++;
-    uint32 const firstTeamId = urand(0, 1) == 0 ? BlueTeamId : RedTeamId;
-    uint32 const secondTeamId = firstTeamId == BlueTeamId ? RedTeamId : BlueTeamId;
-
-    uint64 const firstKey = GetPlayerKey(firstPlayer);
-    uint64 const secondKey = GetPlayerKey(secondPlayer);
-    WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), firstKey), WaitingPlayers.end());
-    WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), secondKey), WaitingPlayers.end());
 
     MatchRecord& match = Matches[matchId];
     match.MatchId = matchId;
     match.InstanceId = instanceId;
-    GetRosterForTeam(match, firstTeamId).push_back(firstKey);
-    GetRosterForTeam(match, secondTeamId).push_back(secondKey);
 
-    AssignPlayerToMatch(firstPlayer, matchId, instanceId, firstTeamId, queueId);
-    AssignPlayerToMatch(secondPlayer, matchId, instanceId, secondTeamId, queueId);
+    std::vector<PlayerMatchAssignment> assignments;
+    assignments.reserve(players.size());
 
-    TC_LOG_INFO("scripts", "MOBA match: created 1v1 match {} instance {}: {}={}, {}={}",
-        matchId, instanceId,
-        firstPlayer->GetName(), firstTeamId == BlueTeamId ? "blue" : "red",
-        secondPlayer->GetName(), secondTeamId == BlueTeamId ? "blue" : "red");
+    for (std::size_t i = 0; i < players.size(); ++i)
+    {
+        Player* player = players[i];
+        uint32 const teamId = i < blueCount ? BlueTeamId : RedTeamId;
 
-    return { { matchId, firstTeamId }, { matchId, secondTeamId } };
+        GetRosterForTeam(match, teamId).push_back(GetPlayerKey(player));
+        AssignPlayerToMatch(player, matchId, instanceId, teamId, queueId);
+        assignments.push_back({ matchId, teamId });
+
+        TC_LOG_INFO("scripts", "MOBA match: match {} instance {}: {} -> {}",
+            matchId, instanceId, player->GetName(), teamId == BlueTeamId ? "blue" : "red");
+    }
+
+    return assignments;
 }
 
 void SetPlayerMatchState(Player* player, MatchState state)
@@ -316,7 +322,7 @@ void MarkPlayerMatchInProgress(Player* player)
                 return;
             }
 
-            bg->StartBattleground();
+            bg->SetStatus(STATUS_WAIT_JOIN);
             SetMatchRosterState(matchItr->second, MatchState::InProgress);
             return;
         }

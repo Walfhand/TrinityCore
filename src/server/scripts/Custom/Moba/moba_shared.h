@@ -26,7 +26,10 @@ extern std::size_t const HeroKitCount;
 
 void ApplyHeroKit(Player* player, HeroKit const& kit);
 void ResetForMatch(Player* player);
-void QueueSoloNexusTest(Player* player);
+void QueueMobaMatch(Player* player);
+void QueueDevSoloTest(Player* player);
+bool IsDevSoloModeEnabled();
+uint32 GetConfiguredTeamSize();
 void AbandonPlayerMatch(Player* player);
 bool CompleteSoloNexusObjective(Player* player);
 }
