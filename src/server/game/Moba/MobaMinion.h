@@ -8,6 +8,8 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 
+#include <vector>
+
 class Creature;
 class Unit;
 struct Position;
@@ -17,9 +19,16 @@ namespace Moba
 inline constexpr float MinionAggroRange = 18.0f;
 inline constexpr float MinionLeashRange = 22.0f;            // a locked target is kept until it leaves this range
 inline constexpr float MinionChampionAggroAlertRange = 24.0f;
+inline constexpr float MinionLaneLeashRange = 35.0f;        // drop the chase if the minion strays this far from its lane
 inline constexpr uint32 MinionForcedAggroDurationMs = 3000;
 
-void RegisterMinionLaneDestination(Creature* minion, Position const& destination);
+// Register the lane path the minion should walk, in its own travel order (blue: blue->red,
+// red: red->blue). The minion follows it waypoint by waypoint and never backtracks.
+void RegisterMinionLanePath(Creature* minion, std::vector<Position> const& path);
+// Called when the minion reaches a lane waypoint (POINT_MOTION_TYPE) to advance to the next.
+void OnMinionReachedWaypoint(Creature* minion, uint32 pointId);
+// True if the minion has strayed too far from every lane waypoint (chased off-lane).
+bool IsMinionOffLane(Creature const* minion);
 void RegisterMinionLevel(Creature* minion, uint32 level);
 uint32 GetRegisteredMinionLevel(Creature const* minion);
 void ApplyMinionCombatTuning(Creature* minion, uint32 level);

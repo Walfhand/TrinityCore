@@ -19,8 +19,10 @@
 #include "Unit.h"
 
 #include <algorithm>
+#include <limits>
 #include <list>
 #include <unordered_map>
+#include <vector>
 
 namespace Moba
 {
@@ -28,11 +30,14 @@ namespace
 {
 struct MinionState
 {
-    Position Destination;
+    std::vector<Position> Path;          // lane waypoints in this minion's travel order
+    uint32 PathIndex = 0;                // current target waypoint; only ever increases (no backtracking)
     ObjectGuid ForcedTarget;
     uint32 ForcedTargetExpireTime = 0;
     uint32 Level = MobaStartLevel;
 };
+
+constexpr float MinionWaypointArriveDist = 4.0f;   // distance at which a waypoint counts as reached
 
 std::unordered_map<uint64, MinionState> MinionStates;
 
@@ -210,12 +215,14 @@ void SetForcedTarget(Creature* minion, Unit* target)
 }
 }
 
-void RegisterMinionLaneDestination(Creature* minion, Position const& destination)
+void RegisterMinionLanePath(Creature* minion, std::vector<Position> const& path)
 {
     if (!minion || !IsMinionEntry(minion->GetEntry()))
         return;
 
-    MinionStates[GetMinionKey(minion)].Destination = destination;
+    MinionState& state = MinionStates[GetMinionKey(minion)];
+    state.Path = path;
+    state.PathIndex = 0;
 }
 
 void RegisterMinionLevel(Creature* minion, uint32 level)
@@ -347,19 +354,73 @@ Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
     return bestTarget ? bestTarget : currentVictim;
 }
 
+namespace
+{
+// Advance the waypoint cursor forward only: skip any waypoints the minion already reached
+// or overshot (e.g. while chasing a target), so it never walks back toward its own base.
+void AdvanceMinionPath(Creature* minion, MinionState& state)
+{
+    while (state.PathIndex + 1 < state.Path.size() &&
+        minion->GetExactDist2d(&state.Path[state.PathIndex + 1]) <= minion->GetExactDist2d(&state.Path[state.PathIndex]))
+        ++state.PathIndex;
+
+    if (state.PathIndex + 1 < state.Path.size() &&
+        minion->GetExactDist2d(&state.Path[state.PathIndex]) < MinionWaypointArriveDist)
+        ++state.PathIndex;
+}
+
+void MoveMinionToCurrentWaypoint(Creature* minion, MinionState& state)
+{
+    if (state.PathIndex >= state.Path.size())
+        return;   // reached the enemy nexus; stand and let target selection attack it
+
+    Position const& wp = state.Path[state.PathIndex];
+    minion->GetMotionMaster()->MovePoint(state.PathIndex, wp.GetPositionX(), wp.GetPositionY(), wp.GetPositionZ());
+}
+}
+
 void ResumeMinionLaneMovement(Creature* minion)
 {
     if (!minion || minion->GetVictim())
         return;
 
     auto itr = MinionStates.find(GetMinionKey(minion));
-    if (itr == MinionStates.end())
+    if (itr == MinionStates.end() || itr->second.Path.empty())
         return;
 
-    Position const& destination = itr->second.Destination;
-    if (minion->GetExactDist(&destination) < 2.0f)  // already at the enemy base, nothing to resume
+    AdvanceMinionPath(minion, itr->second);
+    MoveMinionToCurrentWaypoint(minion, itr->second);
+}
+
+void OnMinionReachedWaypoint(Creature* minion, uint32 pointId)
+{
+    if (!minion || minion->GetVictim())
         return;
 
-    minion->GetMotionMaster()->MovePoint(0, destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    auto itr = MinionStates.find(GetMinionKey(minion));
+    if (itr == MinionStates.end() || itr->second.Path.empty())
+        return;
+
+    MinionState& state = itr->second;
+    if (pointId == state.PathIndex)
+        ++state.PathIndex;
+
+    MoveMinionToCurrentWaypoint(minion, state);
+}
+
+bool IsMinionOffLane(Creature const* minion)
+{
+    if (!minion)
+        return false;
+
+    auto itr = MinionStates.find(GetMinionKey(minion));
+    if (itr == MinionStates.end() || itr->second.Path.empty())
+        return false;
+
+    float nearest = std::numeric_limits<float>::max();
+    for (Position const& wp : itr->second.Path)
+        nearest = std::min(nearest, minion->GetExactDist2d(&wp));
+
+    return nearest > MinionLaneLeashRange;
 }
 }

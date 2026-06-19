@@ -9,6 +9,8 @@
 #include "Duration.h"
 #include "Position.h"
 
+#include <vector>
+
 class Map;
 
 namespace Moba
@@ -20,6 +22,7 @@ struct LaneConfig
     Position RedSpawn;
     Position BlueDestination;
     Position RedDestination;
+    std::vector<Position> Waypoints;     // lane path in Blue->Red order; Red walks it reversed
     // League's first wave leaves the base at 0:30.
     Seconds FirstWaveDelay = 30s;
 };

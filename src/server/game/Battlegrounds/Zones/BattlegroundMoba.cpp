@@ -71,6 +71,7 @@ void BattlegroundMoba::StartMobaMatch()
     layout.RedNexus = map.RedBase;
     layout.BlueMinionSpawn = map.BlueBase;
     layout.RedMinionSpawn = map.RedBase;
+    layout.LaneWaypoints = map.MidLaneWaypoints;
 
     _moba.Start(GetBgMap(), layout);
 }

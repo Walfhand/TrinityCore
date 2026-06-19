@@ -45,6 +45,7 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
     _map = map;
     _layout = layout;
     _lane = BuildSingleLaneConfig("moba-lane", layout.BlueMinionSpawn, layout.RedMinionSpawn);
+    _lane.Waypoints = layout.LaneWaypoints;
     _waveNumber = 0;
     _elapsedMs = 0;
     _started = true;

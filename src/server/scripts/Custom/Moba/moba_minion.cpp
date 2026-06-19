@@ -63,6 +63,13 @@ public:
             Moba::ResumeMinionLaneMovement(me);
         }
 
+        void MovementInform(uint32 type, uint32 id) override
+        {
+            // Reached a lane waypoint: advance to the next one (forward only).
+            if (type == POINT_MOTION_TYPE)
+                Moba::OnMinionReachedWaypoint(me, id);
+        }
+
         void UpdateAI(uint32 diff) override
         {
             if (_targetCheckTimer <= diff)
@@ -85,6 +92,15 @@ public:
     private:
         void AcquireTarget()
         {
+            // Lane leash: if a chase has dragged the minion too far off its lane, abandon the
+            // target and return to the lane (it resumes forward, never backward).
+            if (me->GetVictim() && Moba::IsMinionOffLane(me))
+            {
+                me->AttackStop();
+                Moba::ResumeMinionLaneMovement(me);
+                return;
+            }
+
             Unit* target = Moba::SelectMinionTarget(me, me->GetVictim());
             if (!target)
             {

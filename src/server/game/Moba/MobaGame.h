@@ -11,6 +11,8 @@
 #include "MobaRules.h"
 #include "Position.h"
 
+#include <vector>
+
 class Creature;
 class Map;
 class Player;
@@ -25,6 +27,7 @@ struct ArenaLayout
     Position RedNexus;
     Position BlueMinionSpawn;
     Position RedMinionSpawn;
+    std::vector<Position> LaneWaypoints;   // lane path in Blue->Red order
 };
 
 // Drives the MOBA match rules independently of any specific map or Battleground.
