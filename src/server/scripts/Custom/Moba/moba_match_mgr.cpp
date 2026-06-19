@@ -11,6 +11,7 @@
 #include "BattlegroundQueue.h"
 #include "Creature.h"
 #include "Log.h"
+#include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Random.h"
@@ -156,6 +157,70 @@ void NotifyState(Player* player, MobaPlayerState const& state)
 {
     player->GetSession()->SendNotification("MOBA: niveau %u, XP %u/%u, gold %u.",
         state.Level, state.Xp, state.Level < MobaMaxLevel ? GetXpForNextLevel(state.Level) : 0, state.Gold);
+}
+
+// The WoW level mirrors the MOBA level 1:1. GiveLevel rebuilds the base stats from the
+// class/level tables and plays the client level-up effect; the MOBA bonus stats are
+// re-layered on top afterwards (the rebuild wipes whatever delta we had applied).
+void EnsureChampionLevel(Player* player, MobaPlayerState& state)
+{
+    if (player->GetLevel() == state.Level)
+        return;
+
+    player->GiveLevel(state.Level);
+    MaxArchetypeSkills(player, state.ArchetypeIndex);   // GiveLevel reset skills to level * 5; force them back to max
+    state.AppliedStats = {};
+}
+
+// Push the MOBA progression onto the client: the XP bar (on the MOBA curve) and the
+// money widget (1 MOBA gold shown as 1 gold piece).
+void SyncProgressionToClient(Player* player, MobaPlayerState const& state)
+{
+    player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+    player->SetMoney(state.Gold * MobaCopperPerGold);
+
+    if (state.Level < MobaMaxLevel)
+    {
+        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, GetXpForNextLevel(state.Level));
+        player->SetXP(state.Xp);
+    }
+    else
+    {
+        // Max MOBA level: freeze the bar full so it does not read as "almost level 2".
+        uint32 const full = GetXpForNextLevel(MobaMaxLevel - 1);
+        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, full);
+        player->SetXP(full);
+    }
+}
+
+// Grant XP to a single champion, resolving any level-ups (stats + spell unlocks) and
+// refreshing the client bar.
+void GrantPlayerXp(Player* player, MobaPlayerState& state, uint32 xp, bool notify)
+{
+    if (xp && state.Level < MobaMaxLevel)
+    {
+        state.Xp += xp;
+
+        while (state.Level < MobaMaxLevel)
+        {
+            uint32 const next = GetXpForNextLevel(state.Level);
+            if (state.Xp < next)
+                break;
+
+            state.Xp -= next;
+            ++state.Level;
+
+            EnsureChampionLevel(player, state);
+            RecalculateStats(state);
+            ApplyStateStats(player, state);
+            UpdateArchetypeSpells(player, state.ArchetypeIndex, state.Level, true);
+
+            if (notify)
+                player->GetSession()->SendNotification("Niveau MOBA %u atteint.", state.Level);
+        }
+    }
+
+    SyncProgressionToClient(player, state);
 }
 
 void AssignPlayerToMatch(Player* player, uint32 matchId, uint32 instanceId, uint32 teamId, BattlegroundQueueTypeId queueId)
@@ -468,62 +533,93 @@ void InitializePlayerMatchProgress(Player* player)
     state->Level = MobaStartLevel;
     state->Xp = 0;
     state->Gold = MobaStartGold;
+    state->AppliedStats = {};
+    state->MatchElapsedMs = 0;
+    state->PassiveGoldTimerMs = 0;
+
+    EnsureChampionLevel(player, *state);
     RecalculateStats(*state);
     ApplyStateStats(player, *state);
     UpdateArchetypeSpells(player, state->ArchetypeIndex, state->Level, false);
+    SyncProgressionToClient(player, *state);
     state->ProgressInitialized = true;
     NotifyState(player, *state);
 }
 
-void RewardMinionKill(Player* killer, Creature* minion)
+namespace
 {
-    if (!killer || !minion || !killer->InBattleground() || !IsMinionEntry(minion->GetEntry()))
-        return;
+uint32 GetMinionGoldReward(Creature const* minion)
+{
+    switch (GetMinionType(minion->GetEntry()))
+    {
+        case MinionType::Caster: return MobaCasterMinionGold;
+        case MinionType::Siege:  return MobaSiegeMinionGold;
+        default:                 return MobaMeleeMinionGold;
+    }
+}
 
+uint32 GetMinionXpReward(Creature const* minion)
+{
+    switch (GetMinionType(minion->GetEntry()))
+    {
+        case MinionType::Caster: return MobaCasterMinionXp;
+        case MinionType::Siege:  return MobaSiegeMinionXp;
+        default:                 return MobaMeleeMinionXp;
+    }
+}
+
+// Last-hit gold: only the champion that landed the killing blow is paid.
+void RewardMinionGold(Player* killer, Creature* minion)
+{
     MobaPlayerState* state = GetPlayerState(killer);
     if (!state)
         return;
 
-    uint32 gold = MobaMeleeMinionGold;
-    uint32 xp = MobaMeleeMinionXp;
-
-    switch (GetMinionType(minion->GetEntry()))
-    {
-        case MinionType::Caster:
-            gold = MobaCasterMinionGold;
-            xp = MobaCasterMinionXp;
-            break;
-        case MinionType::Siege:
-            gold = MobaSiegeMinionGold;
-            xp = MobaSiegeMinionXp;
-            break;
-        case MinionType::Melee:
-        default:
-            break;
-    }
-
+    uint32 const gold = GetMinionGoldReward(minion);
     state->Gold += gold;
+    killer->SetMoney(state->Gold * MobaCopperPerGold);
+    killer->GetSession()->SendNotification("+%u gold (dernier coup). Total: %u gold.", gold, state->Gold);
+}
 
-    if (state->Level < MobaMaxLevel)
+// Shared XP: every enemy-team champion within range of the dying minion earns the full XP.
+void RewardMinionXp(Creature* minion)
+{
+    BattlegroundMap* bgMap = minion->GetMap()->ToBattlegroundMap();
+    Battleground* bg = bgMap ? bgMap->GetBG() : nullptr;
+    if (!bg)
+        return;
+
+    uint32 const beneficiaryTeam = GetEnemyTeamId(GetTeamIdForMinionEntry(minion->GetEntry()));
+    if (!IsTeamId(beneficiaryTeam))
+        return;
+
+    uint32 const xp = GetMinionXpReward(minion);
+
+    for (auto const& itr : bg->GetPlayers())
     {
-        state->Xp += xp;
-        while (state->Level < MobaMaxLevel)
-        {
-            uint32 const next = GetXpForNextLevel(state->Level);
-            if (state->Xp < next)
-                break;
+        Player* player = ObjectAccessor::GetPlayer(*minion, itr.first);
+        if (!player || !player->IsAlive() || player->GetBGTeam() != beneficiaryTeam)
+            continue;
 
-            state->Xp -= next;
-            ++state->Level;
-            RecalculateStats(*state);
-            ApplyStateStats(killer, *state);
-            UpdateArchetypeSpells(killer, state->ArchetypeIndex, state->Level, true);
-            killer->GetSession()->SendNotification("Niveau MOBA %u atteint.", state->Level);
-        }
+        if (!minion->IsWithinDistInMap(player, MobaXpShareRange))
+            continue;
+
+        if (MobaPlayerState* state = GetPlayerState(player))
+            GrantPlayerXp(player, *state, xp, true);
     }
+}
+}
 
-    killer->GetSession()->SendNotification("+%u gold, +%u XP. Total: %u gold, niveau %u (%u/%u XP).",
-        gold, xp, state->Gold, state->Level, state->Xp, state->Level < MobaMaxLevel ? GetXpForNextLevel(state->Level) : 0);
+void OnMinionKilled(Unit* killer, Creature* minion)
+{
+    if (!minion || !IsMinionEntry(minion->GetEntry()))
+        return;
+
+    if (Player* killerPlayer = killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr)
+        if (killerPlayer->InBattleground())
+            RewardMinionGold(killerPlayer, minion);
+
+    RewardMinionXp(minion);
 }
 
 uint32 GetPlayerMobaLevel(Player const* player)
@@ -532,5 +628,37 @@ uint32 GetPlayerMobaLevel(Player const* player)
         return state->Level;
 
     return MobaStartLevel;
+}
+
+// Passive gold trickle (LoL-style): once a champion has been in the match past the start
+// delay, grant a fixed amount of gold every interval. Driven by a WorldScript tick.
+void UpdatePassiveGold(uint32 diff)
+{
+    for (auto& entry : PlayerStates)
+    {
+        uint64 const playerKey = entry.first;
+        MobaPlayerState& state = entry.second;
+
+        auto recordItr = PlayerMatches.find(playerKey);
+        if (recordItr == PlayerMatches.end() || recordItr->second.State != MatchState::InProgress)
+            continue;
+
+        Player* player = FindOnlinePlayer(playerKey);
+        if (!player || !player->InBattleground())
+            continue;
+
+        state.MatchElapsedMs += diff;
+        if (state.MatchElapsedMs < MobaPassiveGoldStartMs)
+            continue;
+
+        state.PassiveGoldTimerMs += diff;
+        if (state.PassiveGoldTimerMs < MobaPassiveGoldIntervalMs)
+            continue;
+
+        uint32 const intervals = state.PassiveGoldTimerMs / MobaPassiveGoldIntervalMs;
+        state.PassiveGoldTimerMs -= intervals * MobaPassiveGoldIntervalMs;
+        state.Gold += intervals * MobaPassiveGoldAmount;
+        player->SetMoney(state.Gold * MobaCopperPerGold);
+    }
 }
 }

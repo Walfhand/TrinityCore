@@ -832,13 +832,21 @@ MapDifficulty const* GetDownscaledMapDifficultyData(uint32 mapId, Difficulty &di
 PvPDifficultyEntry const* GetBattlegroundBracketByLevel(uint32 mapid, uint32 level)
 {
     PvPDifficultyEntry const* maxEntry = nullptr;              // used for level > max listed level case
+    PvPDifficultyEntry const* minEntry = nullptr;             // used for level < min listed level case
     for (uint32 i = 0; i < sPvPDifficultyStore.GetNumRows(); ++i)
     {
         if (PvPDifficultyEntry const* entry = sPvPDifficultyStore.LookupEntry(i))
         {
-            // skip unrelated and too-high brackets
-            if (entry->MapID != mapid || entry->MinLevel > level)
+            if (entry->MapID != mapid)
                 continue;
+
+            // bracket sits entirely above the requested level: remember the lowest one as a floor
+            if (entry->MinLevel > level)
+            {
+                if (!minEntry || entry->MinLevel < minEntry->MinLevel)
+                    minEntry = entry;
+                continue;
+            }
 
             // exactly fit
             if (entry->MaxLevel >= level)
@@ -850,7 +858,12 @@ PvPDifficultyEntry const* GetBattlegroundBracketByLevel(uint32 mapid, uint32 lev
         }
     }
 
-    return maxEntry;
+    if (maxEntry)
+        return maxEntry;
+
+    // Level below every bracket on this map: clamp to the lowest bracket instead of failing,
+    // so sub-min-level units (MOBA champions start at level 1) can still resolve a bracket.
+    return minEntry;
 }
 
 PvPDifficultyEntry const* GetBattlegroundBracketById(uint32 mapid, BattlegroundBracketId id)

@@ -39,6 +39,7 @@ extern Archetype const Archetypes[];
 extern std::size_t const ArchetypeCount;
 
 void ApplyArchetype(Player* player, Archetype const& archetype);
+void MaxArchetypeSkills(Player* player, uint32 archetypeIndex);
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);
 void ResetForMatch(Player* player);
 void QueueMobaMatch(Player* player);

@@ -13,6 +13,7 @@
 
 class Player;
 class Creature;
+class Unit;
 
 namespace Moba
 {
@@ -36,6 +37,8 @@ struct MobaPlayerState
     uint32 Gold = MobaStartGold;
     MobaStats Stats;
     MobaStats AppliedStats;
+    uint32 MatchElapsedMs = 0;
+    uint32 PassiveGoldTimerMs = 0;
     bool ProgressInitialized = false;
 };
 
@@ -59,7 +62,8 @@ MobaPlayerState* GetPlayerState(Player* player);
 MobaPlayerState const* GetPlayerState(Player const* player);
 void SetPlayerArchetype(Player* player, uint32 archetypeIndex);
 void InitializePlayerMatchProgress(Player* player);
-void RewardMinionKill(Player* killer, Creature* minion);
+void OnMinionKilled(Unit* killer, Creature* minion);
+void UpdatePassiveGold(uint32 diff);
 uint32 GetPlayerMobaLevel(Player const* player);
 }
 

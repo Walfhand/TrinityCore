@@ -27,6 +27,7 @@ public:
         void Reset() override
         {
             MakePassive();
+            ApplyNexusTuning();
         }
 
         void MoveInLineOfSight(Unit* /*who*/) override { }
@@ -88,6 +89,16 @@ public:
             me->SetReactState(REACT_PASSIVE);
             me->SetUnitFlag(UNIT_FLAG_PACIFIED);
             me->AttackStop();
+        }
+
+        void ApplyNexusTuning()
+        {
+            // Low level so champions/minions of any level land hits reliably (no high-level
+            // "boss" miss), but a large health pool so the Nexus is a real objective.
+            me->SetLevel(Moba::MobaNexusLevel);
+            me->SetCreateHealth(Moba::MobaNexusHealth);
+            me->SetMaxHealth(Moba::MobaNexusHealth);
+            me->SetHealth(Moba::MobaNexusHealth);
         }
     };
 

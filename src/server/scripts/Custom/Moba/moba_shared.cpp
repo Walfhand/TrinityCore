@@ -9,6 +9,9 @@
 #include "Log.h"
 #include "Player.h"
 #include "SpellHistory.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+#include "World.h"
 #include "WorldSession.h"
 
 #include <vector>
@@ -25,7 +28,7 @@ Archetype const Archetypes[] =
         // + the 3 warrior stances (so abilities are usable) + Swords + Shield proficiency
         { 100, 78, 1715, 6673, 6343, 2457, 71, 2458, 201, 9116, SPELL_MOBA_RAGE_GUARD, 0 },
         { 2, 1, 3, 6, 4, 0, 7, 9, 0, 0, 5, 0 },
-        { 727, 7108, 0 },                         // Notched Shortsword + Infantry Shield
+        { 20977, 20984, 0 },                      // Recruit's Shortsword + Recruit's Shield (req level 1)
         { SKILL_SWORDS, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
         2457                                      // enter Battle Stance on pick
     },
@@ -36,7 +39,7 @@ Archetype const Archetypes[] =
         // Frostbolt, Fire Blast, Frost Nova, Blink + Staves proficiency
         { 116, 2136, 122, 1953, 227, 0, 0, 0 },
         { 1, 2, 3, 4, 0, 0, 0, 0 },
-        { 1933, 0, 0 },                           // Staff of Conjuring
+        { 20978, 0, 0 },                          // Apprentice's Staff (req level 1)
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
     },
@@ -47,7 +50,7 @@ Archetype const Archetypes[] =
         // Holy Light, Seal of Righteousness, Judgement, Devotion Aura, Hammer of Justice + Maces + Shield
         { 635, 21084, 20271, 465, 853, 198, 9116, 0 },
         { 1, 2, 3, 0, 4, 0, 0, 0 },
-        { 2075, 7108, 0 },                        // Priest's Mace + Infantry Shield
+        { 20981, 20984, 0 },                      // Neophyte's Mace + Recruit's Shield (req level 1)
         { SKILL_MACES, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
         0
     },
@@ -58,7 +61,7 @@ Archetype const Archetypes[] =
         // Sinister Strike, Eviscerate, Kick, Sprint, Stealth + Daggers proficiency
         { 1752, 2098, 1766, 2983, 1784, 1180, 0, 0 },
         { 1, 2, 4, 5, 3, 0, 0, 0 },
-        { 1917, 0, 0 },                           // Jeweled Dagger
+        { 2092, 0, 0 },                           // Worn Dagger (req level 1)
         { SKILL_DAGGERS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
     },
@@ -69,7 +72,7 @@ Archetype const Archetypes[] =
         // Auto Shot, Arcane Shot, Concussive Shot, Multi-Shot, Hunter's Mark + Bows proficiency
         { 75, 3044, 5116, 2643, 1130, 264, 0, 0 },
         { 0, 1, 2, 4, 3, 0, 0, 0 },
-        { 8180, 0, 0 },                           // Hunting Bow
+        { 20980, 0, 0 },                          // Warder's Shortbow (req level 1)
         { SKILL_BOWS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
     },
@@ -80,7 +83,7 @@ Archetype const Archetypes[] =
         // Shadow Bolt, Corruption, Immolate, Fear, Curse of Agony + Staves proficiency
         { 686, 172, 348, 5782, 980, 227, 0, 0 },
         { 1, 2, 3, 5, 4, 0, 0, 0 },
-        { 1933, 0, 0 },                           // Staff of Conjuring
+        { 20978, 0, 0 },                          // Apprentice's Staff (req level 1)
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
     }
@@ -155,24 +158,6 @@ void ApplyArchetypePower(Player* player, Powers power)
     }
 }
 
-void MaxArchetypeSkills(Player* player, Archetype const& archetype)
-{
-    uint16 const maxSkill = player->GetMaxSkillValueForLevel();
-
-    for (uint32 skillId : archetype.Skills)
-    {
-        if (!skillId)
-            continue;
-
-        if (skillId == SKILL_SHIELD)
-            player->SetSkill(skillId, 0, 1, 1);
-        else
-            player->SetSkill(skillId, 0, maxSkill, maxSkill);
-    }
-
-    player->UpdateWeaponsSkillsToMaxSkillsForLevel();
-}
-
 uint32 GetArchetypeIndex(Archetype const& archetype)
 {
     for (std::size_t i = 0; i < ArchetypeCount; ++i)
@@ -183,10 +168,40 @@ uint32 GetArchetypeIndex(Archetype const& archetype)
 }
 }
 
+// Champions are always at the absolute weapon/defense skill cap, regardless of their MOBA
+// level. This must be re-applied after every GiveLevel: the engine's UpdateSkillsForLevel
+// (called inside GiveLevel) otherwise drops level-dependent skills back to level * 5.
+void MaxArchetypeSkills(Player* player, uint32 archetypeIndex)
+{
+    if (!player || archetypeIndex >= ArchetypeCount)
+        return;
+
+    Archetype const& archetype = Archetypes[archetypeIndex];
+    uint16 const maxSkill = sWorld->GetConfigMaxSkillValue();
+
+    for (uint32 skillId : archetype.Skills)
+    {
+        if (!skillId)
+            continue;
+
+        if (skillId == SKILL_SHIELD)
+            player->SetSkill(skillId, 0, 1, 1);                 // shield is a proficiency flag (1/1)
+        else
+            player->SetSkill(skillId, 0, maxSkill, maxSkill);
+    }
+}
+
 void ApplyArchetype(Player* player, Archetype const& archetype)
 {
-    if (player->GetLevel() != PrototypeLevel)
-        player->GiveLevel(PrototypeLevel);
+    // Block native XP gain so kills/quests never move the bar; the MOBA systems drive it.
+    player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+
+    // Champions live on the MOBA level curve (1 -> 18). Starter gear is req-level-1 and the
+    // arena bracket is clamped (see GetBattlegroundBracketByLevel) so level 1 can still port.
+    if (player->GetLevel() != MobaStartLevel)
+        player->GiveLevel(MobaStartLevel);
+    else
+        player->InitStatsForLevel(true);
 
     player->SetFreeTalentPoints(0);
 
@@ -199,7 +214,7 @@ void ApplyArchetype(Player* player, Archetype const& archetype)
     // otherwise the base class still gates which weapons can be equipped.
     UpdateArchetypeSpells(player, archetypeIndex, MobaStartLevel, false);
 
-    MaxArchetypeSkills(player, archetype);
+    MaxArchetypeSkills(player, archetypeIndex);
 
     ClearWeaponSlots(player);
     for (uint32 itemId : archetype.Weapons)
@@ -225,6 +240,7 @@ void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLev
         return;
 
     Archetype const& archetype = Archetypes[archetypeIndex];
+    bool actionBarChanged = false;
 
     for (std::size_t i = 0; i < sizeof(archetype.Spells) / sizeof(archetype.Spells[0]); ++i)
     {
@@ -241,13 +257,34 @@ void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLev
             if (!known)
             {
                 player->LearnSpell(spellId, false);
+
+                // Drop newly-unlocked active abilities straight onto the action bar (slot = kit
+                // index) so the player never has to drag them from the spellbook. Passives and
+                // weapon proficiencies are skipped.
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (spellInfo && !spellInfo->IsPassive() && i < MAX_ACTION_BUTTONS)
+                {
+                    player->addActionButton(uint8(i), spellId, ACTION_BUTTON_SPELL);
+                    actionBarChanged = true;
+                }
+
                 if (notify && unlockLevel)
                     player->GetSession()->SendNotification("Nouveau sort debloque: %u.", spellId);
             }
         }
         else if (known)
+        {
             player->RemoveSpell(spellId, false, false);
+            if (i < MAX_ACTION_BUTTONS)
+            {
+                player->removeActionButton(uint8(i));
+                actionBarChanged = true;
+            }
+        }
     }
+
+    if (actionBarChanged)
+        player->SendInitialActionButtons();
 }
 
 void ResetForMatch(Player* player)

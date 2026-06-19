@@ -65,6 +65,17 @@ inline constexpr uint32 BlueTeamId = ALLIANCE;
 inline constexpr uint32 RedTeamId = HORDE;
 inline constexpr uint32 InvalidTeamId = 0;
 
+inline constexpr uint32 MobaCopperPerGold = 10000;   // money widget shows 1 MOBA gold as 1 gold piece
+inline constexpr float MobaXpShareRange = 45.0f;     // allies within this range of a dying minion share its XP
+
+// Passive gold income, modeled on League of Legends (which grants 20.4 gold / 10s from 1:50).
+inline constexpr uint32 MobaPassiveGoldStartMs = 110000;    // first trickle at 1:50 into the match
+inline constexpr uint32 MobaPassiveGoldIntervalMs = 10000;  // granted every 10 seconds
+inline constexpr uint32 MobaPassiveGoldAmount = 20;         // gold per interval (LoL is 20.4)
+
+inline constexpr uint8 MobaNexusLevel = 1;            // low level so any champion lands hits reliably
+inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a real objective, not instant
+
 inline bool IsTeamId(uint32 teamId)
 {
     return teamId == BlueTeamId || teamId == RedTeamId;

@@ -50,8 +50,8 @@ public:
 
         void JustDied(Unit* killer) override
         {
-            if (Player* killerPlayer = killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr)
-                Moba::RewardMinionKill(killerPlayer, me);
+            // Gold to the last-hitter, XP shared with nearby enemy-team champions.
+            Moba::OnMinionKilled(killer, me);
 
             Moba::ClearMinionState(me);
         }

@@ -72,7 +72,7 @@ INSERT INTO `creature_template` (
 ) VALUES (
     900001, 0, 0, 0,
     0, 0, 1484, 0, 0, 0,
-    'Blue Nexus', 'Prototype Win Condition', NULL, 0, 80, 80, 0,
+    'Blue Nexus', 'Prototype Win Condition', NULL, 0, 1, 1, 0,
     14, 0, 1, 1.14286, 3, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
@@ -150,7 +150,7 @@ INSERT INTO `creature_template` (
 ) VALUES (
     900002, 0, 0, 0,
     0, 0, 1484, 0, 0, 0,
-    'Red Nexus', 'Prototype Win Condition', NULL, 0, 80, 80, 0,
+    'Red Nexus', 'Prototype Win Condition', NULL, 0, 1, 1, 0,
     14, 0, 1, 1.14286, 3, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,

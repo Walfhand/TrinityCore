@@ -207,6 +207,8 @@ PvPDifficultyEntry const* ResolvePrototypeBracket(Player* player)
         return nullptr;
     }
 
+    // Resolve the arena bracket from the player's real WoW level. The core BG port handler
+    // does the same on accept, so both must agree (champions enter at PrototypeLevel >= 10).
     PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgTemplate->GetMapId(), player->GetLevel());
     if (!bracketEntry)
     {
@@ -280,7 +282,19 @@ public:
     }
 };
 
+class moba_passive_gold_world : public WorldScript
+{
+public:
+    moba_passive_gold_world() : WorldScript("moba_passive_gold_world") { }
+
+    void OnUpdate(uint32 diff) override
+    {
+        Moba::UpdatePassiveGold(diff);
+    }
+};
+
 void AddSC_moba_solo_match()
 {
     new moba_match_player_script();
+    new moba_passive_gold_world();
 }
