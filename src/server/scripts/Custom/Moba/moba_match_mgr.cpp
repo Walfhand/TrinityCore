@@ -9,8 +9,10 @@
 #include "BattlegroundPackets.h"
 #include "BattlegroundQueue.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "Random.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -40,6 +42,7 @@ struct MatchRecord
 
 std::unordered_map<uint64, PlayerMatchRecord> PlayerMatches;
 std::unordered_map<uint32, MatchRecord> Matches;
+std::vector<uint64> WaitingPlayers;
 uint32 NextMatchId = 1;
 
 uint64 GetPlayerKey(Player const* player)
@@ -54,6 +57,8 @@ std::vector<uint64>& GetRosterForTeam(MatchRecord& match, uint32 teamId)
 
 void RemovePlayerFromMatch(uint64 playerKey, PlayerMatchRecord const& playerRecord)
 {
+    WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), playerKey), WaitingPlayers.end());
+
     auto matchItr = Matches.find(playerRecord.MatchId);
     if (matchItr == Matches.end())
         return;
@@ -76,29 +81,65 @@ void SetPlayerMatchState(Player* player, PlayerMatchRecord& record, MatchState s
     TC_LOG_INFO("scripts", "MOBA match: player {} match {} state {}", player->GetName(), record.MatchId, GetMatchStateName(state));
 }
 
-uint32 CountAssignedPlayers(uint32 teamId)
+bool IsWaitingRecord(PlayerMatchRecord const& record)
 {
-    uint32 count = 0;
-
-    for (auto const& [_, record] : PlayerMatches)
-        if (record.TeamId == teamId && record.State != MatchState::None && record.State != MatchState::Finished)
-            ++count;
-
-    return count;
+    return record.MatchId == 0 && record.State == MatchState::Queued;
 }
 
-uint32 SelectAutoTeam()
+Player* FindOnlinePlayer(uint64 playerKey)
 {
-    uint32 const blueCount = CountAssignedPlayers(BlueTeamId);
-    uint32 const redCount = CountAssignedPlayers(RedTeamId);
+    return ObjectAccessor::FindPlayerByLowGUID(ObjectGuid::LowType(playerKey));
+}
 
-    if (blueCount == redCount)
-        return urand(0, 1) == 0 ? BlueTeamId : RedTeamId;
+void AssignPlayerToMatch(Player* player, uint32 matchId, uint32 instanceId, uint32 teamId, BattlegroundQueueTypeId queueId)
+{
+    uint64 const playerKey = GetPlayerKey(player);
+    PlayerMatchRecord& playerRecord = PlayerMatches[playerKey];
+    playerRecord.MatchId = matchId;
+    playerRecord.InstanceId = instanceId;
+    playerRecord.TeamId = teamId;
+    playerRecord.QueueId = queueId;
+    SetPlayerMatchState(player, playerRecord, MatchState::Queued);
+}
 
-    if (blueCount < redCount)
-        return BlueTeamId;
+bool IsMatchReadyToStart(MatchRecord const& match)
+{
+    std::vector<uint64> roster;
+    roster.insert(roster.end(), match.BlueRoster.begin(), match.BlueRoster.end());
+    roster.insert(roster.end(), match.RedRoster.begin(), match.RedRoster.end());
 
-    return RedTeamId;
+    if (roster.empty())
+        return false;
+
+    for (uint64 playerKey : roster)
+    {
+        Player* member = FindOnlinePlayer(playerKey);
+        if (!member || !member->InBattleground())
+            return false;
+
+        Battleground* bg = member->GetBattleground();
+        if (!bg || bg->GetInstanceID() != match.InstanceId)
+            return false;
+    }
+
+    return true;
+}
+
+void SetMatchRosterState(MatchRecord const& match, MatchState state)
+{
+    std::vector<uint64> roster;
+    roster.insert(roster.end(), match.BlueRoster.begin(), match.BlueRoster.end());
+    roster.insert(roster.end(), match.RedRoster.begin(), match.RedRoster.end());
+
+    for (uint64 playerKey : roster)
+    {
+        Player* member = FindOnlinePlayer(playerKey);
+        auto recordItr = PlayerMatches.find(playerKey);
+        if (!member || recordItr == PlayerMatches.end())
+            continue;
+
+        SetPlayerMatchState(member, recordItr->second, state);
+    }
 }
 
 void ClearPlayerMatch(Player* player, char const* reason)
@@ -152,6 +193,9 @@ bool HasActiveMatchState(Player* player)
     if (itr == PlayerMatches.end())
         return false;
 
+    if (IsWaitingRecord(itr->second))
+        return true;
+
     if (player->InBattleground() || player->InBattlegroundQueue())
         return true;
 
@@ -160,26 +204,81 @@ bool HasActiveMatchState(Player* player)
     return false;
 }
 
-PlayerMatchAssignment CreateSoloMatch(Player* player, uint32 instanceId, BattlegroundQueueTypeId queueId)
+void QueueWaitingPlayer(Player* player)
 {
     uint64 const playerKey = GetPlayerKey(player);
+    PlayerMatchRecord& playerRecord = PlayerMatches[playerKey];
+    playerRecord.MatchId = 0;
+    playerRecord.InstanceId = 0;
+    playerRecord.TeamId = InvalidTeamId;
+    playerRecord.QueueId = BATTLEGROUND_QUEUE_NONE;
+    playerRecord.State = MatchState::Queued;
+
+    if (std::find(WaitingPlayers.begin(), WaitingPlayers.end(), playerKey) == WaitingPlayers.end())
+        WaitingPlayers.push_back(playerKey);
+
+    TC_LOG_INFO("scripts", "MOBA match: player {} queued for 1v1", player->GetName());
+}
+
+Player* TakeWaitingOpponent(Player* player)
+{
+    uint64 const playerKey = GetPlayerKey(player);
+
+    for (auto itr = WaitingPlayers.begin(); itr != WaitingPlayers.end();)
+    {
+        uint64 const opponentKey = *itr;
+        if (opponentKey == playerKey)
+        {
+            itr = WaitingPlayers.erase(itr);
+            continue;
+        }
+
+        auto recordItr = PlayerMatches.find(opponentKey);
+        Player* opponent = FindOnlinePlayer(opponentKey);
+        if (recordItr == PlayerMatches.end() || !IsWaitingRecord(recordItr->second) || !opponent || opponent->InBattleground() || opponent->InBattlegroundQueue())
+        {
+            if (opponent)
+                ClearPlayerMatch(opponent, "stale waiting queue");
+            else if (recordItr != PlayerMatches.end())
+                PlayerMatches.erase(recordItr);
+
+            itr = WaitingPlayers.erase(itr);
+            continue;
+        }
+
+        WaitingPlayers.erase(itr);
+        return opponent;
+    }
+
+    return nullptr;
+}
+
+DuoMatchAssignments CreateDuoMatch(Player* firstPlayer, Player* secondPlayer, uint32 instanceId, BattlegroundQueueTypeId queueId)
+{
     uint32 const matchId = NextMatchId++;
-    uint32 const teamId = SelectAutoTeam();
+    uint32 const firstTeamId = urand(0, 1) == 0 ? BlueTeamId : RedTeamId;
+    uint32 const secondTeamId = firstTeamId == BlueTeamId ? RedTeamId : BlueTeamId;
+
+    uint64 const firstKey = GetPlayerKey(firstPlayer);
+    uint64 const secondKey = GetPlayerKey(secondPlayer);
+    WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), firstKey), WaitingPlayers.end());
+    WaitingPlayers.erase(std::remove(WaitingPlayers.begin(), WaitingPlayers.end(), secondKey), WaitingPlayers.end());
 
     MatchRecord& match = Matches[matchId];
     match.MatchId = matchId;
     match.InstanceId = instanceId;
-    GetRosterForTeam(match, teamId).push_back(playerKey);
+    GetRosterForTeam(match, firstTeamId).push_back(firstKey);
+    GetRosterForTeam(match, secondTeamId).push_back(secondKey);
 
-    PlayerMatchRecord& playerRecord = PlayerMatches[playerKey];
-    playerRecord.MatchId = matchId;
-    playerRecord.InstanceId = instanceId;
-    playerRecord.TeamId = teamId;
-    playerRecord.QueueId = queueId;
-    SetPlayerMatchState(player, playerRecord, MatchState::Queued);
+    AssignPlayerToMatch(firstPlayer, matchId, instanceId, firstTeamId, queueId);
+    AssignPlayerToMatch(secondPlayer, matchId, instanceId, secondTeamId, queueId);
 
-    TC_LOG_INFO("scripts", "MOBA match: player {} assigned to {} team in match {}", player->GetName(), teamId == BlueTeamId ? "blue" : "red", matchId);
-    return { matchId, teamId };
+    TC_LOG_INFO("scripts", "MOBA match: created 1v1 match {} instance {}: {}={}, {}={}",
+        matchId, instanceId,
+        firstPlayer->GetName(), firstTeamId == BlueTeamId ? "blue" : "red",
+        secondPlayer->GetName(), secondTeamId == BlueTeamId ? "blue" : "red");
+
+    return { { matchId, firstTeamId }, { matchId, secondTeamId } };
 }
 
 void SetPlayerMatchState(Player* player, MatchState state)
@@ -196,11 +295,34 @@ void MarkPlayerMatchInProgress(Player* player)
     if (!player->InBattleground())
         return;
 
-    if (Battleground* bg = player->GetBattleground())
-        if (bg->GetStatus() == STATUS_WAIT_QUEUE)
-            bg->StartBattleground();
+    auto itr = PlayerMatches.find(GetPlayerKey(player));
+    if (itr == PlayerMatches.end())
+        return;
 
-    SetPlayerMatchState(player, MatchState::InProgress);
+    PlayerMatchRecord& record = itr->second;
+    auto matchItr = Matches.find(record.MatchId);
+    if (matchItr == Matches.end())
+        return;
+
+    if (Battleground* bg = player->GetBattleground())
+    {
+        if (bg->GetStatus() == STATUS_WAIT_QUEUE)
+        {
+            SetPlayerMatchState(player, record, MatchState::Preparing);
+
+            if (!IsMatchReadyToStart(matchItr->second))
+            {
+                player->GetSession()->SendNotification("En attente de l'autre joueur...");
+                return;
+            }
+
+            bg->StartBattleground();
+            SetMatchRosterState(matchItr->second, MatchState::InProgress);
+            return;
+        }
+    }
+
+    SetPlayerMatchState(player, record, MatchState::InProgress);
 }
 
 void AbandonPlayerMatch(Player* player)

@@ -35,7 +35,85 @@ void ClearPrototypeQueues(Player* player, PvPDifficultyEntry const* bracketEntry
     ClearQueueStatuses(player, GetPrototypeQueueTypeId(bracketEntry), GetArenaCleanupQueueTypeId(bracketEntry));
 }
 
-bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
+bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bgQueue, BattlegroundQueueTypeId bgQueueTypeId, PvPDifficultyEntry const* bracketEntry, PlayerMatchAssignment const& assignment)
+{
+    GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
+    if (!ginfo)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: AddGroup failed for {}", player->GetName());
+        player->GetSession()->SendNotification("Erreur prototype : entree en file refusee.");
+        return false;
+    }
+
+    ginfo->Team = ::Team(assignment.TeamId);
+    ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
+    ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
+
+    uint32 const queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
+    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: no free queue slot for {}", player->GetName());
+        player->GetSession()->SendNotification("Erreur prototype : aucune file disponible.");
+        bgQueue.RemovePlayer(player->GetGUID(), false);
+        return false;
+    }
+
+    player->SetInviteForBattlegroundQueueType(bgQueueTypeId, bg->GetInstanceID());
+    bg->IncreaseInvitedCount(assignment.TeamId);
+
+    uint32 const avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
+    WorldPackets::Battleground::BattlefieldStatusQueued queuedStatus;
+    BattlegroundMgr::BuildBattlegroundStatusQueued(&queuedStatus, bg, queueSlot, ginfo->JoinTime, bgQueueTypeId, avgTime);
+    player->SendDirectMessage(queuedStatus.Write());
+
+    SetPlayerMatchState(player, MatchState::Invited);
+
+    WorldPackets::Battleground::BattlefieldStatusNeedConfirmation battlefieldStatus;
+    BattlegroundMgr::BuildBattlegroundStatusNeedConfirmation(&battlefieldStatus, bg, queueSlot, INVITE_ACCEPT_WAIT_TIME, bgQueueTypeId);
+    player->SendDirectMessage(battlefieldStatus.Write());
+
+    player->GetSession()->SendNotification("Match 1v1 trouve. Accepte la popup pour entrer.");
+    return true;
+}
+
+bool InviteDuoMatch(Player* firstPlayer, Player* secondPlayer, PvPDifficultyEntry const* bracketEntry)
+{
+    ResetForMatch(firstPlayer);
+    ResetForMatch(secondPlayer);
+
+    Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_NA, bracketEntry, ARENA_TYPE_2v2, false);
+    if (!bg)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed for 1v1");
+        firstPlayer->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
+        secondPlayer->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
+        AbandonPlayerMatch(firstPlayer);
+        AbandonPlayerMatch(secondPlayer);
+        return false;
+    }
+
+    // Keep the arena in queue status while the native popup is pending.
+    // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
+    bg->SetStatus(STATUS_WAIT_QUEUE);
+
+    BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
+    DuoMatchAssignments const assignments = CreateDuoMatch(firstPlayer, secondPlayer, bg->GetInstanceID(), bgQueueTypeId);
+    BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
+
+    if (!InvitePlayerToMatch(firstPlayer, bg, bgQueue, bgQueueTypeId, bracketEntry, assignments.First)
+        || !InvitePlayerToMatch(secondPlayer, bg, bgQueue, bgQueueTypeId, bracketEntry, assignments.Second))
+    {
+        AbandonPlayerMatch(firstPlayer);
+        AbandonPlayerMatch(secondPlayer);
+        return false;
+    }
+
+    TC_LOG_INFO("scripts", "MOBA match: players {} and {} invited to 1v1 Nagrand Arena BG instance {}",
+        firstPlayer->GetName(), secondPlayer->GetName(), bg->GetInstanceID());
+    return true;
+}
+
+bool QueueOneVsOneMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
 {
     if (player->InBattleground())
     {
@@ -57,62 +135,11 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
         return false;
     }
 
-    ResetForMatch(player);
+    if (Player* opponent = TakeWaitingOpponent(player))
+        return InviteDuoMatch(opponent, player, bracketEntry);
 
-    Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_NA, bracketEntry, ARENA_TYPE_2v2, false);
-    if (!bg)
-    {
-        TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed for {}", player->GetName());
-        player->GetSession()->SendNotification("Erreur prototype : creation arene refusee.");
-        return false;
-    }
-
-    // Keep the arena in queue status while the native popup is pending.
-    // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
-    bg->SetStatus(STATUS_WAIT_QUEUE);
-
-    BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
-    PlayerMatchAssignment const assignment = CreateSoloMatch(player, bg->GetInstanceID(), bgQueueTypeId);
-    BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
-    GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
-    if (!ginfo)
-    {
-        TC_LOG_ERROR("scripts", "MOBA match: AddGroup failed for {}", player->GetName());
-        player->GetSession()->SendNotification("Erreur prototype : entree en file refusee.");
-        AbandonPlayerMatch(player);
-        return false;
-    }
-
-    ginfo->Team = ::Team(assignment.TeamId);
-    ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
-    ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
-
-    uint32 const queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
-    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
-    {
-        TC_LOG_ERROR("scripts", "MOBA match: no free queue slot for {}", player->GetName());
-        player->GetSession()->SendNotification("Erreur prototype : aucune file disponible.");
-        bgQueue.RemovePlayer(player->GetGUID(), false);
-        AbandonPlayerMatch(player);
-        return false;
-    }
-
-    player->SetInviteForBattlegroundQueueType(bgQueueTypeId, bg->GetInstanceID());
-    bg->IncreaseInvitedCount(assignment.TeamId);
-
-    uint32 const avgTime = bgQueue.GetAverageQueueWaitTime(ginfo);
-    WorldPackets::Battleground::BattlefieldStatusQueued queuedStatus;
-    BattlegroundMgr::BuildBattlegroundStatusQueued(&queuedStatus, bg, queueSlot, ginfo->JoinTime, bgQueueTypeId, avgTime);
-    player->SendDirectMessage(queuedStatus.Write());
-
-    SetPlayerMatchState(player, MatchState::Invited);
-
-    WorldPackets::Battleground::BattlefieldStatusNeedConfirmation battlefieldStatus;
-    BattlegroundMgr::BuildBattlegroundStatusNeedConfirmation(&battlefieldStatus, bg, queueSlot, INVITE_ACCEPT_WAIT_TIME, bgQueueTypeId);
-    player->SendDirectMessage(battlefieldStatus.Write());
-
-    TC_LOG_INFO("scripts", "MOBA match: player {} invited to Nagrand Arena BG instance {}", player->GetName(), bg->GetInstanceID());
-    player->GetSession()->SendNotification("Match trouve. Accepte la popup pour entrer.");
+    QueueWaitingPlayer(player);
+    player->GetSession()->SendNotification("Tu es en file 1v1. En attente d'un adversaire.");
     return true;
 }
 }
@@ -135,7 +162,7 @@ void QueueSoloNexusTest(Player* player)
         return;
     }
 
-    InviteSoloTestMatch(player, bracketEntry);
+    QueueOneVsOneMatch(player, bracketEntry);
 }
 
 bool CompleteSoloNexusObjective(Player* /*player*/)

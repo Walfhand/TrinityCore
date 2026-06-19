@@ -23,7 +23,7 @@ public:
             for (std::size_t i = 0; i < Moba::HeroKitCount; ++i)
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, Moba::HeroKits[i].Name, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + i);
 
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Tag solo - Test Nexus", GOSSIP_SENDER_MAIN, Moba::ActionJoinSoloTest);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Tag 1v1 - Test Nexus", GOSSIP_SENDER_MAIN, Moba::ActionJoinSoloTest);
             SendGossipMenuFor(player, Moba::NpcTextDefault, me->GetGUID());
             return true;
         }

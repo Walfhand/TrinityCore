@@ -19,11 +19,19 @@ struct PlayerMatchAssignment
     uint32 TeamId = InvalidTeamId;
 };
 
+struct DuoMatchAssignments
+{
+    PlayerMatchAssignment First;
+    PlayerMatchAssignment Second;
+};
+
 void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId);
 void ClearQueueStatuses(Player* player, BattlegroundQueueTypeId firstQueueId, BattlegroundQueueTypeId secondQueueId);
 
 bool HasActiveMatchState(Player* player);
-PlayerMatchAssignment CreateSoloMatch(Player* player, uint32 instanceId, BattlegroundQueueTypeId queueId);
+void QueueWaitingPlayer(Player* player);
+Player* TakeWaitingOpponent(Player* player);
+DuoMatchAssignments CreateDuoMatch(Player* firstPlayer, Player* secondPlayer, uint32 instanceId, BattlegroundQueueTypeId queueId);
 void SetPlayerMatchState(Player* player, MatchState state);
 void MarkPlayerMatchInProgress(Player* player);
 void AbandonPlayerMatch(Player* player);
