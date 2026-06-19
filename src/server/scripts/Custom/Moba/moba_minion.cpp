@@ -81,11 +81,15 @@ public:
             Unit* target = Moba::SelectMinionTarget(me, me->GetVictim());
             if (!target)
             {
+                // No target in range: stop fighting and keep marching down the lane.
+                // The victim may have already been cleared by the engine (target died),
+                // so resume based on the movement state, not on GetVictim().
                 if (me->GetVictim())
-                {
                     me->AttackStop();
+
+                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
                     Moba::ResumeMinionLaneMovement(me);
-                }
+
                 return;
             }
 

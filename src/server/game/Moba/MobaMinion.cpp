@@ -273,6 +273,9 @@ void ResumeMinionLaneMovement(Creature* minion)
         return;
 
     Position const& destination = itr->second.Destination;
+    if (minion->GetExactDist(&destination) < 2.0f)  // already at the enemy base, nothing to resume
+        return;
+
     minion->GetMotionMaster()->MovePoint(0, destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
 }
 }
