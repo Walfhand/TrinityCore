@@ -12,6 +12,7 @@
 #include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
+#include "Random.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
 
@@ -25,7 +26,8 @@ struct MatchRecord
 {
     MatchState State = MatchState::None;
     uint32 InstanceId = 0;
-    uint32 TeamId = BlueTeamId;
+    uint32 TeamId = InvalidTeamId;
+    BattlegroundQueueTypeId QueueId = BATTLEGROUND_QUEUE_NONE;
 };
 
 std::unordered_map<uint64, MatchRecord> PlayerMatches;
@@ -41,6 +43,31 @@ void SetMatchState(Player* player, MatchRecord& record, MatchState state)
     TC_LOG_INFO("scripts", "MOBA match: player {} state {}", player->GetName(), GetMatchStateName(state));
 }
 
+uint32 CountAssignedPlayers(uint32 teamId)
+{
+    uint32 count = 0;
+
+    for (auto const& [_, record] : PlayerMatches)
+        if (record.TeamId == teamId && record.State != MatchState::None && record.State != MatchState::Finished)
+            ++count;
+
+    return count;
+}
+
+uint32 SelectAutoTeam()
+{
+    uint32 const blueCount = CountAssignedPlayers(BlueTeamId);
+    uint32 const redCount = CountAssignedPlayers(RedTeamId);
+
+    if (blueCount == redCount)
+        return urand(0, 1) == 0 ? BlueTeamId : RedTeamId;
+
+    if (blueCount < redCount)
+        return BlueTeamId;
+
+    return RedTeamId;
+}
+
 BattlegroundQueueTypeId GetPrototypeQueueTypeId(PvPDifficultyEntry const* bracketEntry)
 {
     return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_NA, bracketEntry->GetBracketId(), 0);
@@ -51,10 +78,31 @@ BattlegroundQueueTypeId GetArenaCleanupQueueTypeId(PvPDifficultyEntry const* bra
     return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_AA, bracketEntry->GetBracketId(), ARENA_TYPE_2v2);
 }
 
+void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId)
+{
+    if (queueId == BATTLEGROUND_QUEUE_NONE)
+        return;
+
+    uint32 const queueSlot = player->GetBattlegroundQueueIndex(queueId);
+    if (queueSlot < PLAYER_MAX_BATTLEGROUND_QUEUES)
+    {
+        WorldPackets::Battleground::BattlefieldStatusNone battlefieldStatus;
+        BattlegroundMgr::BuildBattlegroundStatusNone(&battlefieldStatus, queueSlot);
+        player->SendDirectMessage(battlefieldStatus.Write());
+    }
+
+    BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(queueId);
+    GroupQueueInfo ginfo;
+    if (queue.GetPlayerGroupInfoData(player->GetGUID(), &ginfo))
+        queue.RemovePlayer(player->GetGUID(), true);
+
+    player->RemoveBattlegroundQueueId(queueId);
+}
+
 void ClearPrototypeQueues(Player* player, PvPDifficultyEntry const* bracketEntry)
 {
-    player->RemoveBattlegroundQueueId(GetPrototypeQueueTypeId(bracketEntry));
-    player->RemoveBattlegroundQueueId(GetArenaCleanupQueueTypeId(bracketEntry));
+    ClearQueueStatus(player, GetPrototypeQueueTypeId(bracketEntry));
+    ClearQueueStatus(player, GetArenaCleanupQueueTypeId(bracketEntry));
 }
 
 bool HasActiveMatchState(Player* player)
@@ -81,6 +129,7 @@ void ClearPlayerMatch(Player* player, char const* reason)
         return;
 
     TC_LOG_INFO("scripts", "MOBA match: player {} cleared from state {} ({})", player->GetName(), GetMatchStateName(itr->second.State), reason);
+    ClearQueueStatus(player, itr->second.QueueId);
     PlayerMatches.erase(itr);
 }
 
@@ -108,7 +157,8 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
 
     MatchRecord& record = PlayerMatches[GetPlayerKey(player)];
     SetMatchState(player, record, MatchState::Queued);
-    record.TeamId = BlueTeamId;
+    record.TeamId = SelectAutoTeam();
+    TC_LOG_INFO("scripts", "MOBA match: player {} assigned to {} team", player->GetName(), record.TeamId == BlueTeamId ? "blue" : "red");
 
     ResetForMatch(player);
 
@@ -125,6 +175,7 @@ bool InviteSoloTestMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
     bg->StartBattleground();
 
     BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
+    record.QueueId = bgQueueTypeId;
     BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
     GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
     if (!ginfo)
@@ -231,8 +282,7 @@ public:
             return;
         }
 
-        if (!player->InBattleground() && !player->InBattlegroundQueue())
-            Moba::AbandonPlayerMatch(player);
+        Moba::AbandonPlayerMatch(player);
     }
 };
 
