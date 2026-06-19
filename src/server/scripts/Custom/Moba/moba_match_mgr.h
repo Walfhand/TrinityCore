@@ -6,42 +6,16 @@
 #define CUSTOM_MOBA_MATCH_MGR_H
 
 #include "Define.h"
+#include "MobaProgression.h"
 #include "MobaRules.h"
 #include "SharedDefines.h"
 
 #include <vector>
 
 class Player;
-class Creature;
-class Unit;
 
 namespace Moba
 {
-struct MobaStats
-{
-    uint32 BonusHealth = 0;
-    uint32 AttackDamage = 0;
-    uint32 SpellPower = 0;
-    uint32 Armor = 0;
-    uint32 MagicResist = 0;
-};
-
-struct MobaPlayerState
-{
-    uint32 MatchId = 0;
-    uint32 InstanceId = 0;
-    uint32 TeamId = InvalidTeamId;
-    uint32 ArchetypeIndex = 0;
-    uint32 Level = MobaStartLevel;
-    uint32 Xp = 0;
-    uint32 Gold = MobaStartGold;
-    MobaStats Stats;
-    MobaStats AppliedStats;
-    uint32 MatchElapsedMs = 0;
-    uint32 PassiveGoldTimerMs = 0;
-    bool ProgressInitialized = false;
-};
-
 struct PlayerMatchAssignment
 {
     uint32 MatchId = 0;
@@ -58,13 +32,6 @@ std::vector<PlayerMatchAssignment> CreateMatch(std::vector<Player*> const& playe
 void SetPlayerMatchState(Player* player, MatchState state);
 void MarkPlayerMatchInProgress(Player* player);
 void AbandonPlayerMatch(Player* player);
-MobaPlayerState* GetPlayerState(Player* player);
-MobaPlayerState const* GetPlayerState(Player const* player);
-void SetPlayerArchetype(Player* player, uint32 archetypeIndex);
-void InitializePlayerMatchProgress(Player* player);
-void OnMinionKilled(Unit* killer, Creature* minion);
-void UpdatePassiveGold(uint32 diff);
-uint32 GetPlayerMobaLevel(Player const* player);
 }
 
 #endif

@@ -2,8 +2,8 @@
  * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  */
 
-#include "moba_shared.h"
-#include "moba_match_mgr.h"
+#include "MobaArchetypes.h"
+#include "MobaProgression.h"
 
 #include "Item.h"
 #include "Log.h"
@@ -122,7 +122,7 @@ void EquipStarterItem(Player* player, uint32 itemId)
     if (player->CanEquipNewItem(NULL_SLOT, dest, itemId, false) == EQUIP_ERR_OK)
         player->EquipNewItem(dest, itemId, true);
     else
-        TC_LOG_ERROR("scripts", "MOBA archetype: cannot equip item {} on {}", itemId, player->GetName());
+        TC_LOG_ERROR("entities.player", "MOBA archetype: cannot equip item {} on {}", itemId, player->GetName());
 }
 
 void ConfigurePower(Player* player, Powers power, uint32 maxPower, uint32 currentPower)

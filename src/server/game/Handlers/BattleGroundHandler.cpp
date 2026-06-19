@@ -463,7 +463,9 @@ void WorldSession::HandleBattlefieldLeaveOpcode(WorldPackets::Battleground::Batt
     // not allow leave battleground in combat
     if (_player->IsInCombat())
         if (Battleground* bg = _player->GetBattleground())
-            if (bg->GetStatus() != STATUS_WAIT_LEAVE)
+            // MOBA prototype (Nagrand arena): champions are almost always in combat with
+            // minions, so the vanilla "no leave in combat" rule would lock them in. Allow it.
+            if (bg->GetStatus() != STATUS_WAIT_LEAVE && bg->GetTypeID() != BATTLEGROUND_NA)
                 return;
 
     _player->LeaveBattleground();
