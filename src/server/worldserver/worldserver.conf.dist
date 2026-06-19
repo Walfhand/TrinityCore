@@ -4182,7 +4182,7 @@ Moba.TeamSize = 1
 #
 #    Moba.DevSoloMode
 #        Description: Dev-only helper. When enabled, the MOBA lobby NPC exposes a
-#                     "DEV: Match solo" option that launches a Nagrand Nexus match
+#                     "DEV: Match solo" option that launches a Guerilla MOBA match
 #                     with a single player, so the match flow can be tested without
 #                     a second player. Should stay disabled on a real server.
 #        Default:     0 - (Disabled)

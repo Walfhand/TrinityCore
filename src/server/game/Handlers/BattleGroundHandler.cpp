@@ -33,6 +33,7 @@
 #include "Group.h"
 #include "Language.h"
 #include "Log.h"
+#include "MobaQueue.h"
 #include "NPCPackets.h"
 #include "Object.h"
 #include "ObjectAccessor.h"
@@ -81,6 +82,11 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
 
     // ignore if player is already in BG
     if (_player->InBattleground())
+        return;
+
+    // MOBA mode runs its own matchmaking (custom blue/red balancing, dev-solo, 1v1 pop) instead
+    // of the native BG queue. Delegate via a registered handler so core stays decoupled from scripts.
+    if (bgTypeId == BATTLEGROUND_MOBA && Moba::HandleBattlemasterJoin(_player))
         return;
 
     // get bg instance or bg template if instance not found
@@ -463,9 +469,9 @@ void WorldSession::HandleBattlefieldLeaveOpcode(WorldPackets::Battleground::Batt
     // not allow leave battleground in combat
     if (_player->IsInCombat())
         if (Battleground* bg = _player->GetBattleground())
-            // MOBA prototype (Nagrand arena): champions are almost always in combat with
+            // MOBA prototype: champions are almost always in combat with
             // minions, so the vanilla "no leave in combat" rule would lock them in. Allow it.
-            if (bg->GetStatus() != STATUS_WAIT_LEAVE && bg->GetTypeID() != BATTLEGROUND_NA)
+            if (bg->GetStatus() != STATUS_WAIT_LEAVE && bg->GetTypeID() != BATTLEGROUND_MOBA)
                 return;
 
     _player->LeaveBattleground();

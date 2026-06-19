@@ -19,8 +19,6 @@
 
 #include "Arena.h"
 #include "EventMap.h"
-#include "MobaGame.h"
-#include "MobaRules.h"
 
 enum BattlegroundNAObjectTypes
 {
@@ -33,13 +31,6 @@ enum BattlegroundNAObjectTypes
     BG_NA_OBJECT_MAX            = 6
 };
 
-enum BattlegroundNACreatureTypes
-{
-    BG_NA_CREATURE_BLUE_NEXUS   = 0,
-    BG_NA_CREATURE_RED_NEXUS    = 1,
-    BG_NA_CREATURE_MAX          = 2
-};
-
 enum BattlegroundNAGameObjects
 {
     BG_NA_OBJECT_TYPE_DOOR_1    = 183978,
@@ -48,18 +39,6 @@ enum BattlegroundNAGameObjects
     BG_NA_OBJECT_TYPE_DOOR_4    = 183979,
     BG_NA_OBJECT_TYPE_BUFF_1    = 184663,
     BG_NA_OBJECT_TYPE_BUFF_2    = 184664
-};
-
-enum BattlegroundNACreatures
-{
-    BG_NA_CREATURE_TYPE_BLUE_NEXUS = Moba::NpcBlueNexus,
-    BG_NA_CREATURE_TYPE_RED_NEXUS  = Moba::NpcRedNexus
-};
-
-enum BattlegroundNAMobaTeams
-{
-    BG_NA_MOBA_TEAM_BLUE        = Moba::BlueTeamId,
-    BG_NA_MOBA_TEAM_RED         = Moba::RedTeamId
 };
 
 inline constexpr Seconds BG_NA_REMOVE_DOORS_TIMER    = 5s;
@@ -75,22 +54,16 @@ class BattlegroundNA : public Arena
         BattlegroundNA();
 
         /* inherited from BattlegroundClass */
-        void AddPlayer(Player* player) override;
-        void RemovePlayer(Player* player, ObjectGuid guid, uint32 team) override;
         void StartingEventCloseDoors() override;
         void StartingEventOpenDoors() override;
 
         void HandleAreaTrigger(Player* Source, uint32 Trigger) override;
-        void HandleKillUnit(Creature* creature, Player* killer) override;
         bool SetupBattleground() override;
         void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
 
     private:
         void PostUpdateImpl(uint32 diff) override;
-        void CheckWinConditions() override;
-        void StartMobaMatch();
 
         EventMap _events;
-        Moba::MatchController _moba;
 };
 #endif

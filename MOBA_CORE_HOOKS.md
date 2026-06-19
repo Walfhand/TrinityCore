@@ -13,10 +13,14 @@ Everything else lives in **new files** that never conflict on rebase:
   - `MobaGame.{h,cpp}` — per-instance `MatchController` (nexus spawn, wave scheduling).
   - `MobaLane.{h,cpp}` — lane geometry + wave planning.
   - `MobaMinion.{h,cpp}` — minion AI helpers (targeting, lane movement, tuning).
+  - `MobaQueue.{h,cpp}` — battlemaster-join seam: scripts register the custom matchmaking
+    handler; the core join hook calls it (dependency inversion, no game->script dependency).
 - Thin script hooks (script lib): `src/server/scripts/Custom/Moba/`
   - `moba_lobby.cpp`, `moba_match_mgr.{h,cpp}`, `moba_minion.cpp`, `moba_nexus.cpp`,
     `moba_solo_match.cpp`, `moba_spells.cpp`, `moba_shared.h`.
 - SQL: `sql/custom/world/0001_moba_lobby.sql`, `0002_moba_spells.sql`.
+- Guerilla BG SQL: `0003_guerilla_game_tele.sql`, `0004_guerilla_instance_template.sql`,
+  `0005_guerilla_battleground_template.sql`.
 
 The guiding rule: **core files only get thin hooks that call into the subsystem**; never
 embed MOBA logic in an upstream file. When updating TrinityCore, re-apply the edits below.
@@ -25,21 +29,31 @@ embed MOBA logic in an upstream file. When updating TrinityCore, re-apply the ed
 
 ## Core edits (re-apply these after a TrinityCore update)
 
-### 1. `src/server/game/Battlegrounds/Zones/BattlegroundNA.{cpp,h}` — MOBA match host
-The Nagrand arena is reused as the match backend. The BG class owns a
+### 1. `src/server/game/Battlegrounds/Zones/BattlegroundMoba.{cpp,h}` — MOBA match host
+The MOBA mode has its own battleground class on map `900` (`guerilla`). The BG class owns a
 `Moba::MatchController _moba` and acts as a thin adapter:
 - `PostUpdateImpl` → `_moba.Update(diff)` (ticks nexus/wave logic).
-- `StartingEventOpenDoors` → `StartMobaMatch()` which translates the arena team start
-  positions into a `Moba::ArenaLayout` and calls `_moba.Start(...)`.
+- `StartingEventOpenDoors` → `StartMobaMatch()` which builds a `Moba::ArenaLayout` from
+  Guerilla start/nexus positions and calls `_moba.Start(...)`.
 - `HandleKillUnit` → `_moba.OnUnitKilled(...)` → `EndBattleground(winner)` on nexus death.
 - `AddPlayer`/`RemovePlayer` set the team faction via `Moba::GetFactionForTeamId`.
-- `CheckWinConditions` is neutered (arena would otherwise auto-win on an empty enemy team).
+- `CheckWinConditions` is owned by the MOBA controller, so vanilla population wins are disabled.
 
-**Why:** the prototype runs matches on `BATTLEGROUND_NA`.
-**Phase D note:** `StartMobaMatch`'s position translation is the only map-specific glue
-left; it will be replaced by a data-driven `MobaMapConfig`.
+**Why:** the prototype no longer depends on `BATTLEGROUND_NA` / Nagrand Arena. Map `900`
+is advertised through battleground type `BATTLEGROUND_MOBA = 12`.
+**Next cleanup:** `StartMobaMatch` still has hardcoded positions; replace this with a
+data-driven `MobaMapConfig` when adding more maps.
 
-### 2. `src/server/game/DataStores/DBCStores.cpp` — `GetBattlegroundBracketByLevel`
+### 2. `src/server/shared/SharedDefines.h` — battleground id
+Adds `BATTLEGROUND_MOBA = 12`.
+
+**Why:** battleground type ids are used as compact array indexes in several BG systems.
+Using the map id (`900`) as a BG type id would overrun those arrays.
+
+### 3. `src/server/game/Battlegrounds/BattlegroundMgr.cpp` — BG factory
+Registers `BattlegroundMoba` in both template and instance creation paths.
+
+### 4. `src/server/game/DataStores/DBCStores.cpp` — `GetBattlegroundBracketByLevel`
 Added a `minEntry` fallback: when the requested level is **below every bracket** on the
 map, return the lowest bracket instead of `nullptr`.
 
@@ -48,20 +62,24 @@ port handler re-resolves the bracket from the player level on accept; without th
 it returns null and the "Enter" port silently fails.
 **Scope:** generic (all maps), but "clamp to nearest bracket" is sane default behavior.
 
-### 3. `src/server/game/Handlers/BattleGroundHandler.cpp` — `HandleBattlefieldLeaveOpcode`
-The "no leave while in combat" guard now also passes when `bg->GetTypeID() == BATTLEGROUND_NA`.
+### 5. `src/server/game/Handlers/BattleGroundHandler.cpp` — two MOBA hooks
+- `HandleBattlefieldLeaveOpcode`: the "no leave while in combat" guard also passes when
+  `bg->GetTypeID() == BATTLEGROUND_MOBA` (champions are almost always in combat with minions,
+  so the vanilla rule would make "Leave Arena" do nothing until the match ends).
+- `HandleBattlemasterJoinOpcode`: when `bgTypeId == BATTLEGROUND_MOBA`, delegate to
+  `Moba::HandleBattlemasterJoin(_player)` and return, bypassing the native queue. MOBA uses
+  its own matchmaking (custom blue/red teams, dev-solo, 1v1 pop); the native queue assigns
+  teams by faction and only pops when both sides reach `MinPlayersPerTeam`, so it never pops
+  for a MOBA match. The handler is registered by scripts via the `MobaQueue` seam.
 
-**Why:** MOBA champions are almost always in combat with minions, so the vanilla rule
-would make the "Leave Arena" button do nothing until the match ends.
-
-### 4. `src/server/game/Entities/Object/Object.cpp` — `WorldObject::IsValidAttackTarget`
+### 6. `src/server/game/Entities/Object/Object.cpp` — `WorldObject::IsValidAttackTarget`
 Early-out guard: a player in a battleground cannot target a creature that is
 `Moba::IsOwnNexus(playerTeam, creatureEntry)`.
 
 **Why:** you must never be able to attack/target your own Nexus.
 (Also includes `#include "MobaRules.h"`.)
 
-### 5. `src/server/game/Entities/Unit/Unit.cpp` — `Unit::UpdateDisplayPower`
+### 7. `src/server/game/Entities/Unit/Unit.cpp` — `Unit::UpdateDisplayPower`
 Added `FORM_BATTLESTANCE` / `FORM_DEFENSIVESTANCE` / `FORM_BERSERKERSTANCE` to the cases
 that display `POWER_RAGE`.
 
@@ -85,7 +103,7 @@ custom-script hook; new MOBA script files are registered here.
 
 ## Maintenance checklist after a TrinityCore update
 
-1. Re-apply edits 1–5 above (search for `Moba` / `MOBA` / `BATTLEGROUND_NA` in those files).
+1. Re-apply edits 1–7 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
 2. New files under `src/server/game/Moba/` and `src/server/scripts/Custom/Moba/` need no
    action — `CollectSourceFiles` re-globs them automatically.
 3. Rebuild (`make image`) and re-import custom SQL if changed (`make db-custom`).

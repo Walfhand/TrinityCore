@@ -189,6 +189,10 @@ The custom map ID is `900`. The expected client archive paths are:
 
 ```text
 DBFilesClient\Map.dbc
+DBFilesClient\AreaTable.dbc
+DBFilesClient\BattlemasterList.dbc
+DBFilesClient\WorldSafeLocs.dbc
+DBFilesClient\PvpDifficulty.dbc
 World\Maps\guerilla\guerilla.wdt
 World\Maps\guerilla\guerilla.wdl
 World\Maps\guerilla\guerilla_27_25.adt
@@ -209,7 +213,30 @@ Keep a generated copy at:
 /home/walfhand/Documents/wow-maps/patch-guerilla.MPQ
 ```
 
-The server-side `Map.dbc` must contain map ID `900` with directory `guerilla`, and the generated server map files must be installed in `docker/data/maps/`:
+The server-side `Map.dbc` must contain map ID `900` with directory `guerilla`, `InstanceType = 3` (`MAP_BATTLEGROUND`), and `AreaTableID = 9000`.
+
+Guerilla is exposed as battleground type `12` (`BATTLEGROUND_MOBA`) rather than using map id `900` as a BG type id. Keep these files aligned:
+
+```text
+docker/data/dbc/BattlemasterList.dbc  -> row ID 12, map 900, name Guerilla
+docker/data/dbc/WorldSafeLocs.dbc     -> 900901 Blue start, 900902 Red start
+docker/data/dbc/PvpDifficulty.dbc     -> map 900 brackets, RangeIndex 0-15 only
+sql/custom/world/0005_guerilla_battleground_template.sql
+```
+
+The cleanup SQL for the old dungeon-style template is tracked in:
+
+```text
+sql/custom/world/0004_guerilla_instance_template.sql
+```
+
+It removes stale dungeon instance-template data:
+
+```text
+DELETE FROM instance_template WHERE map = 900
+```
+
+The generated server map files must be installed in `docker/data/maps/`:
 
 ```text
 9002527.map
@@ -232,14 +259,14 @@ Each ADT stores these zone IDs in every MCNK `areaid`; after changing them, rebu
 Before replacing the client patch, verify:
 
 - The MPQ is reported by `file` as `MoPaQ (MPQ) archive`.
-- Listing the MPQ shows `DBFilesClient\Map.dbc`, `DBFilesClient\AreaTable.dbc`, the six map files above, plus optional internal files such as `(listfile)`.
+- Listing the MPQ shows the `DBFilesClient\*.dbc` files above, the six map files above, plus optional internal files such as `(listfile)`.
 - The archived paths use backslashes and start with `World\Maps\guerilla\`.
 - The installed client copy matches the generated MPQ byte-for-byte, for example with `cmp -s`.
 
-The current generated patch was installed on June 19, 2026 as `Data/patch-4.MPQ`. It contains `DBFilesClient\Map.dbc`, `guerilla.wdt`, `guerilla.wdl`, and the four ADT tiles listed above. After restarting `worldserver`, teleport to the map in game with:
+The current generated patch was installed on June 19, 2026 as `Data/patch-4.MPQ`. It contains the DBC files listed above, `guerilla.wdt`, `guerilla.wdl`, and the four ADT tiles listed above. After restarting `worldserver`, teleport to the map in game with:
 
 ```text
-.go grid 37 35 900
+.go xyz 3200 2133.33 100 900
 ```
 
 The world DB shortcut is tracked in:

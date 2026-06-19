@@ -13,6 +13,8 @@
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "Log.h"
+#include "MobaMapConfig.h"
+#include "MobaQueue.h"
 #include "Player.h"
 #include "Random.h"
 #include "ScriptMgr.h"
@@ -28,7 +30,7 @@ namespace
 {
 BattlegroundQueueTypeId GetPrototypeQueueTypeId(PvPDifficultyEntry const* bracketEntry)
 {
-    return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_NA, bracketEntry->GetBracketId(), 0);
+    return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_MOBA, bracketEntry->GetBracketId(), 0);
 }
 
 BattlegroundQueueTypeId GetArenaCleanupQueueTypeId(PvPDifficultyEntry const* bracketEntry)
@@ -98,7 +100,7 @@ bool InviteMatch(std::vector<Player*> const& players, uint32 blueCount, PvPDiffi
     for (Player* player : players)
         ResetForMatch(player);
 
-    Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_NA, bracketEntry, ARENA_TYPE_2v2, false);
+    Battleground* bg = sBattlegroundMgr->CreateNewBattleground(BATTLEGROUND_MOBA, bracketEntry, 0, false);
     if (!bg)
     {
         TC_LOG_ERROR("scripts", "MOBA match: CreateNewBattleground failed");
@@ -108,12 +110,20 @@ bool InviteMatch(std::vector<Player*> const& players, uint32 blueCount, PvPDiffi
         return false;
     }
 
-    // Nagrand is an arena, so CreateNewBattleground caps the team size from the
-    // arena type. Override it so the configured MOBA team size fits the instance.
     uint32 const redCount = uint32(players.size()) - blueCount;
     uint32 const maxPerTeam = std::max({ blueCount, redCount, 1u });
     bg->SetMaxPlayersPerTeam(maxPerTeam);
     bg->SetMaxPlayers(maxPerTeam * 2);
+
+    // Disable the native "not enough players, closing in X min" premature finish: a MOBA
+    // match (especially dev-solo) legitimately has an empty/short team. Win is nexus-only.
+    bg->SetMinPlayersPerTeam(0);
+    bg->SetMinPlayers(0);
+
+    // Port each team to its base (single source of truth in the game-lib map config).
+    Moba::MapLayout const& map = Moba::GetGuerillaLayout();
+    bg->SetTeamStartPosition(TEAM_ALLIANCE, map.BlueBase);
+    bg->SetTeamStartPosition(TEAM_HORDE, map.RedBase);
 
     // Keep the arena in queue status while the native popup is pending.
     // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
@@ -136,7 +146,7 @@ bool InviteMatch(std::vector<Player*> const& players, uint32 blueCount, PvPDiffi
     // handler looks up the instance by id before teleporting the player.
     bg->StartBattleground();
 
-    TC_LOG_INFO("scripts", "MOBA match: {} players invited to Nagrand Arena BG instance {} (blue {} / red {})",
+    TC_LOG_INFO("scripts", "MOBA match: {} players invited to Guerilla BG instance {} (blue {} / red {})",
         players.size(), bg->GetInstanceID(), blueCount, redCount);
     return true;
 }
@@ -199,15 +209,15 @@ bool QueueDevSoloMatch(Player* player, PvPDifficultyEntry const* bracketEntry)
 
 PvPDifficultyEntry const* ResolvePrototypeBracket(Player* player)
 {
-    Battleground* bgTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_NA);
+    Battleground* bgTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_MOBA);
     if (!bgTemplate)
     {
-        TC_LOG_ERROR("scripts", "MOBA solo: Nagrand Arena template introuvable");
-        player->GetSession()->SendNotification("Erreur prototype : template arene introuvable.");
+        TC_LOG_ERROR("scripts", "MOBA solo: Guerilla battleground template introuvable");
+        player->GetSession()->SendNotification("Erreur prototype : template BG MOBA introuvable.");
         return nullptr;
     }
 
-    // Resolve the arena bracket from the player's real WoW level. The core BG port handler
+    // Resolve the battleground bracket from the player's real WoW level. The core BG port handler
     // does the same on accept, so both must agree (champions enter at PrototypeLevel >= 10).
     PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgTemplate->GetMapId(), player->GetLevel());
     if (!bracketEntry)
@@ -293,8 +303,23 @@ public:
     }
 };
 
+namespace
+{
+// Called by the core battlemaster-join hook (via the MobaQueue seam) when a player queues for
+// the MOBA battleground from the standard BG list. Routes into our custom matchmaking instead
+// of the native queue: instant pop in dev-solo mode, otherwise normal 1v1+ matchmaking.
+void DispatchMobaBattlemasterJoin(Player* player)
+{
+    if (Moba::IsDevSoloModeEnabled())
+        Moba::QueueDevSoloTest(player);
+    else
+        Moba::QueueMobaMatch(player);
+}
+}
+
 void AddSC_moba_solo_match()
 {
     new moba_match_player_script();
     new moba_passive_gold_world();
+    Moba::SetBattlemasterJoinHandler(&DispatchMobaBattlemasterJoin);
 }

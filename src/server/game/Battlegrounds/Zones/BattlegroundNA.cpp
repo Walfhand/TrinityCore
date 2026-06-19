@@ -16,24 +16,14 @@
  */
 
 #include "BattlegroundNA.h"
-#include "Creature.h"
 #include "Log.h"
-#include "Map.h"
-#include "Pet.h"
 #include "Player.h"
-#include "WorldSession.h"
 #include "WorldPacket.h"
 #include "WorldStatePackets.h"
 
 BattlegroundNA::BattlegroundNA()
 {
     BgObjects.resize(BG_NA_OBJECT_MAX);
-    BgCreatures.resize(BG_NA_CREATURE_MAX);
-
-    StartDelayTimes[BG_STARTING_EVENT_FIRST]  = BG_START_DELAY_NONE;
-    StartDelayTimes[BG_STARTING_EVENT_SECOND] = BG_START_DELAY_NONE;
-    StartDelayTimes[BG_STARTING_EVENT_THIRD]  = BG_START_DELAY_NONE;
-    StartDelayTimes[BG_STARTING_EVENT_FOURTH] = BG_START_DELAY_NONE;
 }
 
 void BattlegroundNA::PostUpdateImpl(uint32 diff)
@@ -56,32 +46,6 @@ void BattlegroundNA::PostUpdateImpl(uint32 diff)
         }
     }
 
-    // MOBA game rules (nexus, minion waves) live in a map-agnostic controller.
-    _moba.Update(diff);
-}
-
-void BattlegroundNA::AddPlayer(Player* player)
-{
-    Arena::AddPlayer(player);
-
-    if (player)
-    {
-        player->SetFaction(Moba::GetFactionForTeamId(player->GetBGTeam()));
-
-        if (Pet* pet = player->GetPet())
-            pet->SetFaction(player->GetFaction());
-    }
-}
-
-void BattlegroundNA::RemovePlayer(Player* player, ObjectGuid /*guid*/, uint32 /*team*/)
-{
-    if (!player)
-        return;
-
-    player->SetFactionForRace(player->GetRace());
-
-    if (Pet* pet = player->GetPet())
-        pet->SetFaction(player->GetFaction());
 }
 
 void BattlegroundNA::StartingEventCloseDoors()
@@ -98,30 +62,6 @@ void BattlegroundNA::StartingEventOpenDoors()
 
     for (uint32 i = BG_NA_OBJECT_BUFF_1; i <= BG_NA_OBJECT_BUFF_2; ++i)
         SpawnBGObject(i, 60);
-
-    StartMobaMatch();
-}
-
-void BattlegroundNA::StartMobaMatch()
-{
-    // The only map-specific part: translate this arena's team start positions into
-    // the generic MOBA layout. Everything else is handled by the controller.
-    Position const* blueStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_BLUE));
-    Position const* redStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_RED));
-
-    if (!blueStart || !redStart)
-    {
-        TC_LOG_ERROR("bg.battleground", "MOBA: cannot start match, missing start positions in Nagrand Arena BG instance {}", GetInstanceID());
-        return;
-    }
-
-    Moba::ArenaLayout layout;
-    layout.BlueNexus = *blueStart;
-    layout.RedNexus = *redStart;
-    layout.BlueMinionSpawn = *blueStart;
-    layout.RedMinionSpawn = *redStart;
-
-    _moba.Start(GetBgMap(), layout);
 }
 
 void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
@@ -138,25 +78,6 @@ void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
             Battleground::HandleAreaTrigger(player, trigger);
             break;
     }
-}
-
-void BattlegroundNA::HandleKillUnit(Creature* creature, Player* killer)
-{
-    if (GetStatus() != STATUS_IN_PROGRESS && GetStatus() != STATUS_WAIT_JOIN)
-        return;
-
-    uint32 const winner = _moba.OnUnitKilled(creature, killer);
-    if (!Moba::IsTeamId(winner))
-        return;
-
-    TC_LOG_INFO("bg.battleground", "MOBA: nexus destroyed in instance {}, winner team {}", GetInstanceID(), winner);
-    Battleground::EndBattleground(winner);
-}
-
-void BattlegroundNA::CheckWinConditions()
-{
-    // MOBA prototype: Nagrand Arena is used as a Nexus objective map.
-    // A solo test player must not instantly win because the other arena team is empty.
 }
 
 void BattlegroundNA::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)
