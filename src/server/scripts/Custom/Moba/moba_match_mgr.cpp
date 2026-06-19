@@ -3,11 +3,13 @@
  */
 
 #include "moba_match_mgr.h"
+#include "moba_shared.h"
 
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "BattlegroundPackets.h"
 #include "BattlegroundQueue.h"
+#include "Creature.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -41,6 +43,8 @@ struct MatchRecord
 };
 
 std::unordered_map<uint64, PlayerMatchRecord> PlayerMatches;
+std::unordered_map<uint64, MobaPlayerState> PlayerStates;
+std::unordered_map<uint64, uint32> SelectedArchetypes;
 std::unordered_map<uint32, MatchRecord> Matches;
 std::vector<uint64> WaitingPlayers;
 uint32 NextMatchId = 1;
@@ -91,6 +95,69 @@ Player* FindOnlinePlayer(uint64 playerKey)
     return ObjectAccessor::FindPlayerByLowGUID(ObjectGuid::LowType(playerKey));
 }
 
+uint32 GetXpForNextLevel(uint32 level)
+{
+    // Gentle early curve for prototype games: first wave should matter, but not
+    // instantly snowball into several levels.
+    return 80 + level * 45;
+}
+
+void RecalculateStats(MobaPlayerState& state)
+{
+    uint32 const levelBonus = state.Level > 1 ? state.Level - 1 : 0;
+    state.Stats.BonusHealth = 180 + levelBonus * 45;
+    state.Stats.AttackDamage = 8 + levelBonus * 3;
+    state.Stats.SpellPower = 8 + levelBonus * 4;
+    state.Stats.Armor = 12 + levelBonus * 2;
+    state.Stats.MagicResist = 8 + levelBonus * 2;
+}
+
+void ApplyStateStats(Player* player, MobaPlayerState& state)
+{
+    int32 const healthDelta = int32(state.Stats.BonusHealth) - int32(state.AppliedStats.BonusHealth);
+    if (healthDelta)
+    {
+        player->SetMaxHealth(std::max<int32>(1, int32(player->GetMaxHealth()) + healthDelta));
+        player->SetHealth(std::min<uint32>(player->GetMaxHealth(), uint32(std::max<int32>(1, int32(player->GetHealth()) + healthDelta))));
+    }
+
+    int32 const armorDelta = int32(state.Stats.Armor) - int32(state.AppliedStats.Armor);
+    if (armorDelta)
+        player->SetArmor(player->GetArmor() + armorDelta);
+
+    int32 const magicResistDelta = int32(state.Stats.MagicResist) - int32(state.AppliedStats.MagicResist);
+    for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+        if (magicResistDelta)
+            player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) + magicResistDelta);
+
+    state.AppliedStats = state.Stats;
+}
+
+void RemoveAppliedStateStats(Player* player, MobaPlayerState& state)
+{
+    if (state.AppliedStats.BonusHealth)
+    {
+        int32 const healthDelta = -int32(state.AppliedStats.BonusHealth);
+        player->SetMaxHealth(std::max<int32>(1, int32(player->GetMaxHealth()) + healthDelta));
+        player->SetHealth(std::min<uint32>(player->GetMaxHealth(), player->GetHealth()));
+    }
+
+    if (state.AppliedStats.Armor)
+        player->SetArmor(player->GetArmor() - int32(state.AppliedStats.Armor));
+
+    if (state.AppliedStats.MagicResist)
+        for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+            player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) - int32(state.AppliedStats.MagicResist));
+
+    state.AppliedStats = {};
+}
+
+void NotifyState(Player* player, MobaPlayerState const& state)
+{
+    player->GetSession()->SendNotification("MOBA: niveau %u, XP %u/%u, gold %u.",
+        state.Level, state.Xp, state.Level < MobaMaxLevel ? GetXpForNextLevel(state.Level) : 0, state.Gold);
+}
+
 void AssignPlayerToMatch(Player* player, uint32 matchId, uint32 instanceId, uint32 teamId, BattlegroundQueueTypeId queueId)
 {
     uint64 const playerKey = GetPlayerKey(player);
@@ -100,6 +167,18 @@ void AssignPlayerToMatch(Player* player, uint32 matchId, uint32 instanceId, uint
     playerRecord.TeamId = teamId;
     playerRecord.QueueId = queueId;
     SetPlayerMatchState(player, playerRecord, MatchState::Queued);
+
+    MobaPlayerState& state = PlayerStates[playerKey];
+    state.MatchId = matchId;
+    state.InstanceId = instanceId;
+    state.TeamId = teamId;
+    state.ArchetypeIndex = SelectedArchetypes.count(playerKey) ? SelectedArchetypes[playerKey] : 0;
+    state.Level = MobaStartLevel;
+    state.Xp = 0;
+    state.Gold = MobaStartGold;
+    state.AppliedStats = {};
+    state.ProgressInitialized = false;
+    RecalculateStats(state);
 }
 
 bool IsMatchReadyToStart(MatchRecord const& match)
@@ -139,6 +218,8 @@ void SetMatchRosterState(MatchRecord const& match, MatchState state)
             continue;
 
         SetPlayerMatchState(member, recordItr->second, state);
+        if (state == MatchState::InProgress)
+            InitializePlayerMatchProgress(member);
     }
 }
 
@@ -155,8 +236,11 @@ void ClearPlayerMatch(Player* player, char const* reason)
     PlayerMatchRecord const record = itr->second;
     TC_LOG_INFO("scripts", "MOBA match: player {} cleared from match {} state {} ({})", player->GetName(), record.MatchId, GetMatchStateName(record.State), reason);
     ClearQueueStatus(player, record.QueueId);
+    if (auto stateItr = PlayerStates.find(playerKey); stateItr != PlayerStates.end())
+        RemoveAppliedStateStats(player, stateItr->second);
     RemovePlayerFromMatch(playerKey, record);
     PlayerMatches.erase(itr);
+    PlayerStates.erase(playerKey);
 }
 }
 
@@ -329,10 +413,124 @@ void MarkPlayerMatchInProgress(Player* player)
     }
 
     SetPlayerMatchState(player, record, MatchState::InProgress);
+    InitializePlayerMatchProgress(player);
 }
 
 void AbandonPlayerMatch(Player* player)
 {
     ClearPlayerMatch(player, "player abandoned");
+}
+
+MobaPlayerState* GetPlayerState(Player* player)
+{
+    if (!player)
+        return nullptr;
+
+    auto itr = PlayerStates.find(GetPlayerKey(player));
+    if (itr == PlayerStates.end())
+        return nullptr;
+
+    return &itr->second;
+}
+
+MobaPlayerState const* GetPlayerState(Player const* player)
+{
+    if (!player)
+        return nullptr;
+
+    auto itr = PlayerStates.find(GetPlayerKey(player));
+    if (itr == PlayerStates.end())
+        return nullptr;
+
+    return &itr->second;
+}
+
+void SetPlayerArchetype(Player* player, uint32 archetypeIndex)
+{
+    if (!player)
+        return;
+
+    SelectedArchetypes[GetPlayerKey(player)] = archetypeIndex;
+
+    if (MobaPlayerState* state = GetPlayerState(player))
+        state->ArchetypeIndex = archetypeIndex;
+}
+
+void InitializePlayerMatchProgress(Player* player)
+{
+    MobaPlayerState* state = GetPlayerState(player);
+    if (!state)
+        return;
+
+    if (state->ProgressInitialized)
+        return;
+
+    state->Level = MobaStartLevel;
+    state->Xp = 0;
+    state->Gold = MobaStartGold;
+    RecalculateStats(*state);
+    ApplyStateStats(player, *state);
+    UpdateArchetypeSpells(player, state->ArchetypeIndex, state->Level, false);
+    state->ProgressInitialized = true;
+    NotifyState(player, *state);
+}
+
+void RewardMinionKill(Player* killer, Creature* minion)
+{
+    if (!killer || !minion || !killer->InBattleground() || !IsMinionEntry(minion->GetEntry()))
+        return;
+
+    MobaPlayerState* state = GetPlayerState(killer);
+    if (!state)
+        return;
+
+    uint32 gold = MobaMeleeMinionGold;
+    uint32 xp = MobaMeleeMinionXp;
+
+    switch (GetMinionType(minion->GetEntry()))
+    {
+        case MinionType::Caster:
+            gold = MobaCasterMinionGold;
+            xp = MobaCasterMinionXp;
+            break;
+        case MinionType::Siege:
+            gold = MobaSiegeMinionGold;
+            xp = MobaSiegeMinionXp;
+            break;
+        case MinionType::Melee:
+        default:
+            break;
+    }
+
+    state->Gold += gold;
+
+    if (state->Level < MobaMaxLevel)
+    {
+        state->Xp += xp;
+        while (state->Level < MobaMaxLevel)
+        {
+            uint32 const next = GetXpForNextLevel(state->Level);
+            if (state->Xp < next)
+                break;
+
+            state->Xp -= next;
+            ++state->Level;
+            RecalculateStats(*state);
+            ApplyStateStats(killer, *state);
+            UpdateArchetypeSpells(killer, state->ArchetypeIndex, state->Level, true);
+            killer->GetSession()->SendNotification("Niveau MOBA %u atteint.", state->Level);
+        }
+    }
+
+    killer->GetSession()->SendNotification("+%u gold, +%u XP. Total: %u gold, niveau %u (%u/%u XP).",
+        gold, xp, state->Gold, state->Level, state->Xp, state->Level < MobaMaxLevel ? GetXpForNextLevel(state->Level) : 0);
+}
+
+uint32 GetPlayerMobaLevel(Player const* player)
+{
+    if (MobaPlayerState const* state = GetPlayerState(player))
+        return state->Level;
+
+    return MobaStartLevel;
 }
 }

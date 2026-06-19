@@ -31,13 +31,59 @@ struct MinionState
     Position Destination;
     ObjectGuid ForcedTarget;
     uint32 ForcedTargetExpireTime = 0;
+    uint32 Level = MobaStartLevel;
 };
 
 std::unordered_map<uint64, MinionState> MinionStates;
 
+struct MinionCombatTuning
+{
+    uint8 Level = MobaStartLevel;
+    uint32 Health = 1;
+    uint32 Armor = 0;
+    float MinDamage = 1.0f;
+    float MaxDamage = 2.0f;
+    uint32 AttackTimeMs = 2000;
+};
+
 uint64 GetMinionKey(Creature const* minion)
 {
     return minion->GetGUID().GetCounter();
+}
+
+uint32 ClampMinionLevel(uint32 level)
+{
+    return std::clamp<uint32>(level, MobaStartLevel, MobaMaxLevel);
+}
+
+uint32 ScaleUInt(uint32 base, uint32 perLevel, uint32 levelIndex)
+{
+    return base + perLevel * levelIndex;
+}
+
+float ScaleFloat(float base, float perLevel, uint32 levelIndex)
+{
+    return base + perLevel * float(levelIndex);
+}
+
+MinionCombatTuning GetMinionCombatTuning(MinionType type, uint32 level)
+{
+    level = ClampMinionLevel(level);
+    uint32 const levelIndex = level - MobaStartLevel;
+
+    switch (type)
+    {
+        case MinionType::Caster:
+            return { uint8(level), ScaleUInt(220, 25, levelIndex), ScaleUInt(20, 1, levelIndex),
+                ScaleFloat(7.0f, 1.5f, levelIndex), ScaleFloat(11.0f, 1.8f, levelIndex), 2000 };
+        case MinionType::Siege:
+            return { uint8(level), ScaleUInt(700, 60, levelIndex), ScaleUInt(45, 3, levelIndex),
+                ScaleFloat(30.0f, 3.5f, levelIndex), ScaleFloat(42.0f, 4.5f, levelIndex), 2200 };
+        case MinionType::Melee:
+        default:
+            return { uint8(level), ScaleUInt(340, 35, levelIndex), ScaleUInt(30, 2, levelIndex),
+                ScaleFloat(12.0f, 2.1f, levelIndex), ScaleFloat(18.0f, 2.6f, levelIndex), 1700 };
+    }
 }
 
 uint32 GetUnitMobaTeam(Unit const* unit)
@@ -170,6 +216,44 @@ void RegisterMinionLaneDestination(Creature* minion, Position const& destination
         return;
 
     MinionStates[GetMinionKey(minion)].Destination = destination;
+}
+
+void RegisterMinionLevel(Creature* minion, uint32 level)
+{
+    if (!minion || !IsMinionEntry(minion->GetEntry()))
+        return;
+
+    MinionStates[GetMinionKey(minion)].Level = ClampMinionLevel(level);
+}
+
+uint32 GetRegisteredMinionLevel(Creature const* minion)
+{
+    if (!minion || !IsMinionEntry(minion->GetEntry()))
+        return MobaStartLevel;
+
+    auto itr = MinionStates.find(GetMinionKey(minion));
+    if (itr == MinionStates.end())
+        return MobaStartLevel;
+
+    return ClampMinionLevel(itr->second.Level);
+}
+
+void ApplyMinionCombatTuning(Creature* minion, uint32 level)
+{
+    if (!minion || !IsMinionEntry(minion->GetEntry()))
+        return;
+
+    MinionCombatTuning const tuning = GetMinionCombatTuning(GetMinionType(minion->GetEntry()), level);
+
+    minion->SetLevel(tuning.Level);
+    minion->SetCreateHealth(tuning.Health);
+    minion->SetMaxHealth(tuning.Health);
+    minion->SetHealth(tuning.Health);
+    minion->SetArmor(int32(tuning.Armor));
+    minion->SetAttackTime(BASE_ATTACK, tuning.AttackTimeMs);
+    minion->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, tuning.MinDamage);
+    minion->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, tuning.MaxDamage);
+    minion->UpdateDamagePhysical(BASE_ATTACK);
 }
 
 void ClearMinionState(Creature* minion)

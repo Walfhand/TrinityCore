@@ -3,6 +3,7 @@
  */
 
 #include "moba_shared.h"
+#include "moba_match_mgr.h"
 
 #include "Creature.h"
 #include "MobaMinion.h"
@@ -19,6 +20,7 @@ constexpr float CasterChaseDistance = 15.0f;       // distance a caster keeps fr
 constexpr float CasterCastRange = 18.0f;           // max range a caster will poke from
 constexpr uint32 CasterCastIntervalMs = 1800;      // caster "auto-attack" cadence
 constexpr uint32 CasterMinionSpell = 5176;         // Wrath: nature bolt used as the ranged attack
+
 }
 
 class npc_moba_minion : public CreatureScript
@@ -35,6 +37,8 @@ public:
             if (uint32 teamId = Moba::GetTeamIdForMinionEntry(me->GetEntry()))
                 me->SetFaction(Moba::GetFactionForTeamId(teamId));
 
+            ApplyPrototypeTuning();
+
             // Passive: the engine must NOT pick targets for us. All target
             // acquisition is manual so the League-style priority is authoritative
             // (no line-of-sight auto-aggro, no threat-based target switching).
@@ -44,8 +48,11 @@ public:
             Moba::ResumeMinionLaneMovement(me);
         }
 
-        void JustDied(Unit* /*killer*/) override
+        void JustDied(Unit* killer) override
         {
+            if (Player* killerPlayer = killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr)
+                Moba::RewardMinionKill(killerPlayer, me);
+
             Moba::ClearMinionState(me);
         }
 
@@ -123,6 +130,11 @@ public:
         Moba::MinionType const _type;
         uint32 _targetCheckTimer = 1000;
         uint32 _castTimer = 0;
+
+        void ApplyPrototypeTuning()
+        {
+            Moba::ApplyMinionCombatTuning(me, Moba::GetRegisteredMinionLevel(me));
+        }
     };
 
     CreatureAI* GetAI(Creature* creature) const override

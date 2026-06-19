@@ -29,6 +29,7 @@ struct Archetype
     char const* Message;
     Powers Power;          // POWER_MANA / POWER_RAGE / POWER_ENERGY
     uint32 Spells[12];     // 0 = empty slot (kit + weapon proficiencies + warrior stances...)
+    uint8 SpellUnlockLevels[12]; // 0 = always granted, otherwise MOBA level required
     uint32 Weapons[3];     // starter items to equip (0 = empty); slot auto-resolved
     uint32 Skills[8];      // combat skills to max for the archetype (0 = empty)
     uint32 OnApplyCast;    // 0 = none; spell cast on the player at pick (e.g. enter Battle Stance)
@@ -38,6 +39,7 @@ extern Archetype const Archetypes[];
 extern std::size_t const ArchetypeCount;
 
 void ApplyArchetype(Player* player, Archetype const& archetype);
+void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);
 void ResetForMatch(Player* player);
 void QueueMobaMatch(Player* player);
 void QueueDevSoloTest(Player* player);

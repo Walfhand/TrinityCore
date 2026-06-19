@@ -49,7 +49,16 @@ enum Constants
     ActionJoinDevSolo = 1101,
     MapGmIsland = 1,
     MapSoloTest = 36,
-    MaxTeamSize = 20
+    MaxTeamSize = 20,
+    MobaStartLevel = 1,
+    MobaMaxLevel = 18,
+    MobaStartGold = 500,
+    MobaMeleeMinionGold = 20,
+    MobaCasterMinionGold = 17,
+    MobaSiegeMinionGold = 45,
+    MobaMeleeMinionXp = 35,
+    MobaCasterMinionXp = 28,
+    MobaSiegeMinionXp = 90
 };
 
 inline constexpr uint32 BlueTeamId = ALLIANCE;

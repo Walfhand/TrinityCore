@@ -3,6 +3,7 @@
  */
 
 #include "moba_shared.h"
+#include "moba_match_mgr.h"
 
 #include "Item.h"
 #include "Log.h"
@@ -23,6 +24,7 @@ Archetype const Archetypes[] =
         // Charge, Heroic Strike, Hamstring, Battle Shout, Thunder Clap
         // + the 3 warrior stances (so abilities are usable) + Swords + Shield proficiency
         { 100, 78, 1715, 6673, 6343, 2457, 71, 2458, 201, 9116, SPELL_MOBA_RAGE_GUARD, 0 },
+        { 2, 1, 3, 6, 4, 0, 7, 9, 0, 0, 5, 0 },
         { 727, 7108, 0 },                         // Notched Shortsword + Infantry Shield
         { SKILL_SWORDS, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
         2457                                      // enter Battle Stance on pick
@@ -33,6 +35,7 @@ Archetype const Archetypes[] =
         POWER_MANA,
         // Frostbolt, Fire Blast, Frost Nova, Blink + Staves proficiency
         { 116, 2136, 122, 1953, 227, 0, 0, 0 },
+        { 1, 2, 3, 4, 0, 0, 0, 0 },
         { 1933, 0, 0 },                           // Staff of Conjuring
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
@@ -43,6 +46,7 @@ Archetype const Archetypes[] =
         POWER_MANA,
         // Holy Light, Seal of Righteousness, Judgement, Devotion Aura, Hammer of Justice + Maces + Shield
         { 635, 21084, 20271, 465, 853, 198, 9116, 0 },
+        { 1, 2, 3, 0, 4, 0, 0, 0 },
         { 2075, 7108, 0 },                        // Priest's Mace + Infantry Shield
         { SKILL_MACES, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
         0
@@ -53,6 +57,7 @@ Archetype const Archetypes[] =
         POWER_ENERGY,
         // Sinister Strike, Eviscerate, Kick, Sprint, Stealth + Daggers proficiency
         { 1752, 2098, 1766, 2983, 1784, 1180, 0, 0 },
+        { 1, 2, 4, 5, 3, 0, 0, 0 },
         { 1917, 0, 0 },                           // Jeweled Dagger
         { SKILL_DAGGERS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
@@ -63,6 +68,7 @@ Archetype const Archetypes[] =
         POWER_MANA,
         // Auto Shot, Arcane Shot, Concussive Shot, Multi-Shot, Hunter's Mark + Bows proficiency
         { 75, 3044, 5116, 2643, 1130, 264, 0, 0 },
+        { 0, 1, 2, 4, 3, 0, 0, 0 },
         { 8180, 0, 0 },                           // Hunting Bow
         { SKILL_BOWS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
@@ -73,6 +79,7 @@ Archetype const Archetypes[] =
         POWER_MANA,
         // Shadow Bolt, Corruption, Immolate, Fear, Curse of Agony + Staves proficiency
         { 686, 172, 348, 5782, 980, 227, 0, 0 },
+        { 1, 2, 3, 5, 4, 0, 0, 0 },
         { 1933, 0, 0 },                           // Staff of Conjuring
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0
@@ -165,6 +172,15 @@ void MaxArchetypeSkills(Player* player, Archetype const& archetype)
 
     player->UpdateWeaponsSkillsToMaxSkillsForLevel();
 }
+
+uint32 GetArchetypeIndex(Archetype const& archetype)
+{
+    for (std::size_t i = 0; i < ArchetypeCount; ++i)
+        if (&Archetypes[i] == &archetype)
+            return uint32(i);
+
+    return 0;
+}
 }
 
 void ApplyArchetype(Player* player, Archetype const& archetype)
@@ -176,11 +192,12 @@ void ApplyArchetype(Player* player, Archetype const& archetype)
 
     WipeSpellbook(player);
 
-    // Learn the kit (incl. weapon-proficiency spells) BEFORE equipping, otherwise the
-    // base class still gates which weapons can be equipped (e.g. a warlock and a bow).
-    for (uint32 spellId : archetype.Spells)
-        if (spellId)
-            player->LearnSpell(spellId, false);
+    uint32 const archetypeIndex = GetArchetypeIndex(archetype);
+    SetPlayerArchetype(player, archetypeIndex);
+
+    // Learn the unlocked kit (incl. weapon-proficiency spells) BEFORE equipping,
+    // otherwise the base class still gates which weapons can be equipped.
+    UpdateArchetypeSpells(player, archetypeIndex, MobaStartLevel, false);
 
     MaxArchetypeSkills(player, archetype);
 
@@ -196,9 +213,41 @@ void ApplyArchetype(Player* player, Archetype const& archetype)
         player->CastSpell(player, archetype.OnApplyCast, true);
 
     ResetForMatch(player);
+
     player->SaveToDB();
 
     player->GetSession()->SendNotification("%s", archetype.Message);
+}
+
+void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify)
+{
+    if (!player || archetypeIndex >= ArchetypeCount)
+        return;
+
+    Archetype const& archetype = Archetypes[archetypeIndex];
+
+    for (std::size_t i = 0; i < sizeof(archetype.Spells) / sizeof(archetype.Spells[0]); ++i)
+    {
+        uint32 const spellId = archetype.Spells[i];
+        if (!spellId)
+            continue;
+
+        uint8 const unlockLevel = archetype.SpellUnlockLevels[i];
+        bool const unlocked = unlockLevel == 0 || unlockLevel <= mobaLevel;
+        bool const known = player->HasSpell(spellId);
+
+        if (unlocked)
+        {
+            if (!known)
+            {
+                player->LearnSpell(spellId, false);
+                if (notify && unlockLevel)
+                    player->GetSession()->SendNotification("Nouveau sort debloque: %u.", spellId);
+            }
+        }
+        else if (known)
+            player->RemoveSpell(spellId, false, false);
+    }
 }
 
 void ResetForMatch(Player* player)

@@ -20,6 +20,9 @@ inline constexpr float MinionChampionAggroAlertRange = 24.0f;
 inline constexpr uint32 MinionForcedAggroDurationMs = 3000;
 
 void RegisterMinionLaneDestination(Creature* minion, Position const& destination);
+void RegisterMinionLevel(Creature* minion, uint32 level);
+uint32 GetRegisteredMinionLevel(Creature const* minion);
+void ApplyMinionCombatTuning(Creature* minion, uint32 level);
 void ClearMinionState(Creature* minion);
 void NotifyChampionAggro(Unit* attacker, Unit* victim);
 // Returns the target a minion should attack given its current victim. Implements

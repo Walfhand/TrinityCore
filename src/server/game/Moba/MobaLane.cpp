@@ -24,7 +24,7 @@ namespace
 constexpr uint32 SecondPhaseMs = 14u * 60u * 1000u;  // 14:00 -> siege every 2nd wave, 25s interval
 constexpr uint32 ThirdPhaseMs = 25u * 60u * 1000u;   // 25:00 -> siege every wave
 constexpr uint32 ThirtyMinMs = 30u * 60u * 1000u;    // 30:00 -> 20s interval
-constexpr uint32 FirstUpgradeMs = 30u * 1000u;       // upgrades begin at 0:30
+constexpr uint32 FirstUpgradeMs = 90u * 1000u;       // first waves stay level 1
 constexpr uint32 UpgradePeriodMs = 90u * 1000u;      // an upgrade every 90s
 constexpr uint32 MaxUpgrades = 30u;
 
@@ -32,8 +32,6 @@ constexpr uint32 FirstSiegeWave = 3u;                // first siege leaves at 1:
 
 constexpr float LateralSpacing = 2.5f;               // spread inside a rank
 constexpr float RankSpacing = 4.0f;                  // gap between melee / caster / siege ranks
-constexpr float HpGrowthPerUpgrade = 0.10f;
-constexpr float DamageGrowthPerUpgrade = 0.08f;
 
 struct LaneVectors
 {
@@ -70,21 +68,9 @@ Position ComputeRankPosition(Position const& start, LaneVectors const& vectors, 
         start.GetPositionZ(), start.GetOrientation());
 }
 
-void ApplyMinionUpgrades(Creature* minion, uint32 upgradeLevel)
+uint32 GetMinionLevelForUpgrade(uint32 upgradeLevel)
 {
-    if (!upgradeLevel)
-        return;
-
-    float const hpMult = 1.0f + upgradeLevel * HpGrowthPerUpgrade;
-    if (uint32 maxHp = uint32(minion->GetMaxHealth() * hpMult))
-    {
-        minion->SetMaxHealth(maxHp);
-        minion->SetFullHealth();
-    }
-
-    float const dmgMult = 1.0f + upgradeLevel * DamageGrowthPerUpgrade;
-    minion->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, minion->GetWeaponDamageRange(BASE_ATTACK, MINDAMAGE) * dmgMult);
-    minion->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, minion->GetWeaponDamageRange(BASE_ATTACK, MAXDAMAGE) * dmgMult);
+    return std::min<uint32>(MobaStartLevel + upgradeLevel, MobaMaxLevel);
 }
 
 void SpawnMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Position const& spawnPos, Position const& destination, uint32 upgradeLevel)
@@ -101,7 +87,9 @@ void SpawnMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Po
     }
 
     minion->SetFaction(GetFactionForTeamId(teamId));
-    ApplyMinionUpgrades(minion, upgradeLevel);
+    uint32 const minionLevel = GetMinionLevelForUpgrade(upgradeLevel);
+    RegisterMinionLevel(minion, minionLevel);
+    ApplyMinionCombatTuning(minion, minionLevel);
     RegisterMinionLaneDestination(minion, destination);
     minion->GetMotionMaster()->MovePoint(0, destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
 }
