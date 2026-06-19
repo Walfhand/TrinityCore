@@ -93,8 +93,17 @@ uint32 GetTargetPriority(Creature const* minion, Unit const* candidate)
 
     Unit const* victim = candidate->GetVictim();
 
+    // League target priority (highest first):
+    //   90 enemy minion hitting an allied champion
+    //   80 enemy minion hitting an allied minion
+    //   70 enemy structure hitting an allied minion
+    //   60 closest enemy minion
+    //   30 closest enemy champion
+    //   10 enemy structure
+    // The "enemy champion hitting an allied champion" case sits above all of these
+    // and is handled separately as a forced target (see NotifyChampionAggro).
     if (candidate->GetTypeId() == TYPEID_PLAYER)
-        return 20;
+        return 30;
 
     Creature const* creature = candidate->ToCreature();
     if (!creature)
@@ -112,7 +121,12 @@ uint32 GetTargetPriority(Creature const* minion, Unit const* candidate)
     }
 
     if (IsNexusEntry(creature->GetEntry()))
-        return 40;
+    {
+        if (IsAlliedMinionForMinion(minion, victim))
+            return 70;
+
+        return 10;
+    }
 
     return 10;
 }
@@ -198,13 +212,22 @@ void NotifyChampionAggro(Unit* attacker, Unit* victim)
     }
 }
 
-Unit* SelectMinionTarget(Creature* minion)
+Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
 {
     if (!minion || !IsMinionEntry(minion->GetEntry()))
         return nullptr;
 
+    // Call-for-help (an enemy champion attacking an allied champion) always wins.
     if (Unit* forcedTarget = GetForcedTarget(minion))
         return forcedTarget;
+
+    // Validate the current target and remember its priority for target locking.
+    uint32 currentPriority = 0;
+    if (currentVictim && currentVictim->IsAlive() && minion->IsValidAttackTarget(currentVictim) &&
+        minion->IsWithinDistInMap(currentVictim, MinionLeashRange))
+        currentPriority = GetTargetPriority(minion, currentVictim);
+    else
+        currentVictim = nullptr;
 
     std::list<Unit*> nearbyUnits;
     Trinity::AnyUnitInObjectRangeCheck check(minion, MinionAggroRange);
@@ -233,7 +256,11 @@ Unit* SelectMinionTarget(Creature* minion)
         }
     }
 
-    return bestTarget;
+    // Target locking: do not abandon a valid target for an equal-or-lower priority one.
+    if (currentVictim && (!bestTarget || bestPriority <= currentPriority))
+        return currentVictim;
+
+    return bestTarget ? bestTarget : currentVictim;
 }
 
 void ResumeMinionLaneMovement(Creature* minion)

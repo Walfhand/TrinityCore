@@ -26,6 +26,13 @@ enum class MatchState
     Finished
 };
 
+enum class MinionType
+{
+    Melee,
+    Caster,
+    Siege
+};
+
 enum Constants
 {
     NpcTextDefault = 1,
@@ -34,6 +41,10 @@ enum Constants
     NpcRedNexus = 900002,
     NpcBlueMinion = 900003,
     NpcRedMinion = 900004,
+    NpcBlueMinionCaster = 900005,
+    NpcRedMinionCaster = 900006,
+    NpcBlueMinionSiege = 900007,
+    NpcRedMinionSiege = 900008,
     ActionJoinMatch = 1100,
     ActionJoinDevSolo = 1101,
     MapGmIsland = 1,
@@ -57,7 +68,33 @@ inline bool IsNexusEntry(uint32 entry)
 
 inline bool IsMinionEntry(uint32 entry)
 {
-    return entry == NpcBlueMinion || entry == NpcRedMinion;
+    switch (entry)
+    {
+        case NpcBlueMinion:
+        case NpcRedMinion:
+        case NpcBlueMinionCaster:
+        case NpcRedMinionCaster:
+        case NpcBlueMinionSiege:
+        case NpcRedMinionSiege:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline MinionType GetMinionType(uint32 entry)
+{
+    switch (entry)
+    {
+        case NpcBlueMinionCaster:
+        case NpcRedMinionCaster:
+            return MinionType::Caster;
+        case NpcBlueMinionSiege:
+        case NpcRedMinionSiege:
+            return MinionType::Siege;
+        default:
+            return MinionType::Melee;
+    }
 }
 
 inline uint32 GetTeamId(Team team)
@@ -103,26 +140,39 @@ inline uint32 GetTeamIdForNexusEntry(uint32 nexusEntry)
     return InvalidTeamId;
 }
 
-inline uint32 GetMinionEntryForTeamId(uint32 teamId)
+inline uint32 GetMinionEntry(uint32 teamId, MinionType type)
 {
-    if (teamId == BlueTeamId)
-        return NpcBlueMinion;
+    if (!IsTeamId(teamId))
+        return 0;
 
-    if (teamId == RedTeamId)
-        return NpcRedMinion;
-
-    return 0;
+    bool const blue = teamId == BlueTeamId;
+    switch (type)
+    {
+        case MinionType::Caster:
+            return blue ? NpcBlueMinionCaster : NpcRedMinionCaster;
+        case MinionType::Siege:
+            return blue ? NpcBlueMinionSiege : NpcRedMinionSiege;
+        case MinionType::Melee:
+        default:
+            return blue ? NpcBlueMinion : NpcRedMinion;
+    }
 }
 
 inline uint32 GetTeamIdForMinionEntry(uint32 minionEntry)
 {
-    if (minionEntry == NpcBlueMinion)
-        return BlueTeamId;
-
-    if (minionEntry == NpcRedMinion)
-        return RedTeamId;
-
-    return InvalidTeamId;
+    switch (minionEntry)
+    {
+        case NpcBlueMinion:
+        case NpcBlueMinionCaster:
+        case NpcBlueMinionSiege:
+            return BlueTeamId;
+        case NpcRedMinion:
+        case NpcRedMinionCaster:
+        case NpcRedMinionSiege:
+            return RedTeamId;
+        default:
+            return InvalidTeamId;
+    }
 }
 
 inline uint32 GetWinnerTeamIdForDestroyedNexus(uint32 nexusEntry)

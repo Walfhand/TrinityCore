@@ -51,14 +51,13 @@ void BattlegroundNA::PostUpdateImpl(uint32 diff)
                 for (uint32 i = BG_NA_OBJECT_DOOR_1; i <= BG_NA_OBJECT_DOOR_2; ++i)
                     DelObject(i);
                 break;
-            case BG_NA_EVENT_SPAWN_MOBA_WAVE:
-                SpawnMobaMinionWave();
-                _events.ScheduleEvent(BG_NA_EVENT_SPAWN_MOBA_WAVE, _mobaLane.WaveInterval);
-                break;
             default:
                 break;
         }
     }
+
+    // MOBA game rules (nexus, minion waves) live in a map-agnostic controller.
+    _moba.Update(diff);
 }
 
 void BattlegroundNA::AddPlayer(Player* player)
@@ -72,11 +71,6 @@ void BattlegroundNA::AddPlayer(Player* player)
         if (Pet* pet = player->GetPet())
             pet->SetFaction(player->GetFaction());
     }
-
-    SpawnMobaNexuses();
-
-    if (player)
-        player->GetSession()->SendNotification("MOBA: tentative de spawn des Nexus Blue/Red.");
 }
 
 void BattlegroundNA::RemovePlayer(Player* player, ObjectGuid /*guid*/, uint32 /*team*/)
@@ -105,66 +99,29 @@ void BattlegroundNA::StartingEventOpenDoors()
     for (uint32 i = BG_NA_OBJECT_BUFF_1; i <= BG_NA_OBJECT_BUFF_2; ++i)
         SpawnBGObject(i, 60);
 
-    SpawnMobaNexuses();
-    if (BuildMobaLaneConfig())
-        _events.ScheduleEvent(BG_NA_EVENT_SPAWN_MOBA_WAVE, _mobaLane.FirstWaveDelay);
+    StartMobaMatch();
 }
 
-void BattlegroundNA::SpawnMobaNexuses()
+void BattlegroundNA::StartMobaMatch()
 {
-    if (GetBGCreature(BG_NA_CREATURE_BLUE_NEXUS, false) || GetBGCreature(BG_NA_CREATURE_RED_NEXUS, false))
-        return;
-
+    // The only map-specific part: translate this arena's team start positions into
+    // the generic MOBA layout. Everything else is handled by the controller.
     Position const* blueStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_BLUE));
     Position const* redStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_RED));
 
     if (!blueStart || !redStart)
     {
-        TC_LOG_ERROR("bg.battleground", "MOBA: Nexus spawn failed, missing start positions in Nagrand Arena BG instance {}", GetInstanceID());
+        TC_LOG_ERROR("bg.battleground", "MOBA: cannot start match, missing start positions in Nagrand Arena BG instance {}", GetInstanceID());
         return;
     }
 
-    TC_LOG_ERROR("bg.battleground", "MOBA: spawning Nexus objectives in Nagrand Arena BG instance {}", GetInstanceID());
+    Moba::ArenaLayout layout;
+    layout.BlueNexus = *blueStart;
+    layout.RedNexus = *redStart;
+    layout.BlueMinionSpawn = *blueStart;
+    layout.RedMinionSpawn = *redStart;
 
-    if (Creature* nexus = AddCreature(BG_NA_CREATURE_TYPE_BLUE_NEXUS, BG_NA_CREATURE_BLUE_NEXUS,
-        blueStart->GetPositionX(), blueStart->GetPositionY(), blueStart->GetPositionZ(), blueStart->GetOrientation(), TEAM_NEUTRAL, RESPAWN_IMMEDIATELY))
-    {
-        nexus->SetFaction(Moba::GetFactionForTeamId(BG_NA_MOBA_TEAM_BLUE));
-        TC_LOG_ERROR("bg.battleground", "MOBA: Blue Nexus spawned in Nagrand Arena BG instance {}", GetInstanceID());
-        nexus->Yell("Nexus Blue en ligne.", LANG_UNIVERSAL, nullptr);
-    }
-    else
-        TC_LOG_ERROR("bg.battleground", "MOBA: Blue Nexus spawn failed in Nagrand Arena BG instance {}", GetInstanceID());
-
-    if (Creature* nexus = AddCreature(BG_NA_CREATURE_TYPE_RED_NEXUS, BG_NA_CREATURE_RED_NEXUS,
-        redStart->GetPositionX(), redStart->GetPositionY(), redStart->GetPositionZ(), redStart->GetOrientation(), TEAM_NEUTRAL, RESPAWN_IMMEDIATELY))
-    {
-        nexus->SetFaction(Moba::GetFactionForTeamId(BG_NA_MOBA_TEAM_RED));
-        TC_LOG_ERROR("bg.battleground", "MOBA: Red Nexus spawned in Nagrand Arena BG instance {}", GetInstanceID());
-        nexus->Yell("Detruis le Nexus Red pour gagner.", LANG_UNIVERSAL, nullptr);
-    }
-    else
-        TC_LOG_ERROR("bg.battleground", "MOBA: Red Nexus spawn failed in Nagrand Arena BG instance {}", GetInstanceID());
-}
-
-void BattlegroundNA::SpawnMobaMinionWave()
-{
-    Moba::SpawnMinionWave(GetBgMap(), _mobaLane, GetInstanceID());
-}
-
-bool BattlegroundNA::BuildMobaLaneConfig()
-{
-    Position const* blueStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_BLUE));
-    Position const* redStart = GetTeamStartPosition(GetTeamIndexByTeamId(BG_NA_MOBA_TEAM_RED));
-
-    if (!blueStart || !redStart)
-    {
-        TC_LOG_ERROR("bg.battleground", "MOBA: lane config failed, missing start positions in Nagrand Arena BG instance {}", GetInstanceID());
-        return false;
-    }
-
-    _mobaLane = Moba::BuildSingleLaneConfig("nagrand-test-lane", *blueStart, *redStart);
-    return true;
+    _moba.Start(GetBgMap(), layout);
 }
 
 void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
@@ -185,22 +142,14 @@ void BattlegroundNA::HandleAreaTrigger(Player* player, uint32 trigger)
 
 void BattlegroundNA::HandleKillUnit(Creature* creature, Player* killer)
 {
-    if (!creature || !Moba::IsNexusEntry(creature->GetEntry()))
-        return;
-
     if (GetStatus() != STATUS_IN_PROGRESS && GetStatus() != STATUS_WAIT_JOIN)
         return;
 
-    uint32 winner = GetWinnerForDestroyedNexus(creature);
+    uint32 const winner = _moba.OnUnitKilled(creature, killer);
     if (!Moba::IsTeamId(winner))
-    {
-        winner = killer ? killer->GetBGTeam() : BG_NA_MOBA_TEAM_BLUE;
-        if (!Moba::IsTeamId(winner))
-            winner = BG_NA_MOBA_TEAM_BLUE;
-    }
+        return;
 
-    TC_LOG_INFO("bg.battleground", "MOBA: Nexus killed by {} in Nagrand Arena BG instance {}, winner team {}",
-        killer ? killer->GetName() : "<unknown>", GetInstanceID(), winner);
+    TC_LOG_INFO("bg.battleground", "MOBA: nexus destroyed in instance {}, winner team {}", GetInstanceID(), winner);
     Battleground::EndBattleground(winner);
 }
 
@@ -208,25 +157,6 @@ void BattlegroundNA::CheckWinConditions()
 {
     // MOBA prototype: Nagrand Arena is used as a Nexus objective map.
     // A solo test player must not instantly win because the other arena team is empty.
-}
-
-uint32 BattlegroundNA::GetWinnerForDestroyedNexus(Creature const* creature)
-{
-    if (!creature)
-        return 0;
-
-    if (uint32 winner = Moba::GetWinnerTeamIdForDestroyedNexus(creature->GetEntry()))
-        return winner;
-
-    if (Creature const* blueNexus = GetBGCreature(BG_NA_CREATURE_BLUE_NEXUS))
-        if (blueNexus->GetGUID() == creature->GetGUID())
-            return BG_NA_MOBA_TEAM_RED;
-
-    if (Creature const* redNexus = GetBGCreature(BG_NA_CREATURE_RED_NEXUS))
-        if (redNexus->GetGUID() == creature->GetGUID())
-            return BG_NA_MOBA_TEAM_BLUE;
-
-    return 0;
 }
 
 void BattlegroundNA::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet)

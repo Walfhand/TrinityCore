@@ -15,13 +15,17 @@ struct Position;
 namespace Moba
 {
 inline constexpr float MinionAggroRange = 18.0f;
+inline constexpr float MinionLeashRange = 22.0f;            // a locked target is kept until it leaves this range
 inline constexpr float MinionChampionAggroAlertRange = 24.0f;
 inline constexpr uint32 MinionForcedAggroDurationMs = 3000;
 
 void RegisterMinionLaneDestination(Creature* minion, Position const& destination);
 void ClearMinionState(Creature* minion);
 void NotifyChampionAggro(Unit* attacker, Unit* victim);
-Unit* SelectMinionTarget(Creature* minion);
+// Returns the target a minion should attack given its current victim. Implements
+// League-style target locking: the current target is kept unless it becomes invalid
+// or a strictly higher-priority target appears.
+Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim);
 void ResumeMinionLaneMovement(Creature* minion);
 }
 
