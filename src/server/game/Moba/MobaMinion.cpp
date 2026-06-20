@@ -39,6 +39,10 @@ struct MinionState
 
 constexpr float MinionWaypointArriveDist = 4.0f;   // distance at which a waypoint counts as reached
 
+// Minions move a touch slower than champions (LoL: ~325 vs ~330-340 MS). Player run rate is 1.0
+// (7 yd/s), so 0.9 keeps minions just behind a champion who walks the lane with them.
+constexpr float MinionRunSpeedRate = 0.90f;
+
 std::unordered_map<uint64, MinionState> MinionStates;
 
 struct MinionCombatTuning
@@ -78,16 +82,18 @@ MinionCombatTuning GetMinionCombatTuning(MinionType type, uint32 level)
 
     switch (type)
     {
+        // Stats and time-based scaling mirror League of Legends (minions have ~0 resistances; the
+        // caster is a ranged glass cannon, the siege a high-HP, high-damage backline unit).
         case MinionType::Caster:
-            return { uint8(level), ScaleUInt(220, 25, levelIndex), ScaleUInt(20, 1, levelIndex),
-                ScaleFloat(7.0f, 1.5f, levelIndex), ScaleFloat(11.0f, 1.8f, levelIndex), 2000 };
+            return { uint8(level), ScaleUInt(284, 19, levelIndex), 0,
+                ScaleFloat(19.0f, 6.0f, levelIndex), ScaleFloat(23.0f, 6.3f, levelIndex), 1500 };
         case MinionType::Siege:
-            return { uint8(level), ScaleUInt(700, 60, levelIndex), ScaleUInt(45, 3, levelIndex),
-                ScaleFloat(30.0f, 3.5f, levelIndex), ScaleFloat(42.0f, 4.5f, levelIndex), 2200 };
+            return { uint8(level), ScaleUInt(835, 295, levelIndex), 0,
+                ScaleFloat(36.0f, 5.0f, levelIndex), ScaleFloat(40.0f, 5.3f, levelIndex), 1100 };
         case MinionType::Melee:
         default:
-            return { uint8(level), ScaleUInt(340, 35, levelIndex), ScaleUInt(30, 2, levelIndex),
-                ScaleFloat(12.0f, 2.1f, levelIndex), ScaleFloat(18.0f, 2.6f, levelIndex), 1700 };
+            return { uint8(level), ScaleUInt(465, 64, levelIndex), ScaleUInt(0, 1, levelIndex),
+                ScaleFloat(10.0f, 4.0f, levelIndex), ScaleFloat(13.0f, 4.3f, levelIndex), 900 };
     }
 }
 
@@ -258,6 +264,7 @@ void ApplyMinionCombatTuning(Creature* minion, uint32 level)
 
     MinionCombatTuning const tuning = GetMinionCombatTuning(GetMinionType(minion->GetEntry()), level);
 
+    minion->SetSpeedRate(MOVE_RUN, MinionRunSpeedRate);   // slightly slower than champions (LoL pacing)
     minion->SetLevel(tuning.Level);
     minion->SetCreateHealth(tuning.Health);
     minion->SetMaxHealth(tuning.Health);

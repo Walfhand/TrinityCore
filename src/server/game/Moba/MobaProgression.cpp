@@ -7,6 +7,7 @@
 #include "MobaMapConfig.h"
 
 #include "Battleground.h"
+#include "BattlegroundScore.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "GameTime.h"
@@ -51,48 +52,74 @@ uint32 GetXpForNextLevel(uint32 level)
     return 80 + level * 45;
 }
 
-void RecalculateStats(MobaPlayerState& state)
+// LoL increasing-growth curve: per-level gains grow with level, reaching base + 17*growth at lvl 18.
+float ComputeCurveStat(float base, float growth, uint32 level)
 {
-    uint32 const levelBonus = state.Level > 1 ? state.Level - 1 : 0;
-    state.Stats.BonusHealth = 180 + levelBonus * 45;
-    state.Stats.AttackDamage = 8 + levelBonus * 3;
-    state.Stats.SpellPower = 8 + levelBonus * 4;
-    state.Stats.Armor = 12 + levelBonus * 2;
-    state.Stats.MagicResist = 8 + levelBonus * 2;
+    if (level <= 1)
+        return base;
+
+    float const n = float(level - 1);
+    return base + growth * n * (0.7025f + 0.0175f * n);
 }
 
+void RecalculateStats(MobaPlayerState& state)
+{
+    ArchetypeStatCurve const& curve = GetArchetypeStatCurve(state.ArchetypeIndex);
+    state.Stats.Health      = uint32(ComputeCurveStat(curve.HealthBase, curve.HealthGrowth, state.Level) + 0.5f);
+    state.Stats.Armor       = uint32(ComputeCurveStat(curve.ArmorBase, curve.ArmorGrowth, state.Level) + 0.5f);
+    state.Stats.MagicResist = uint32(ComputeCurveStat(curve.MagicResistBase, curve.MagicResistGrowth, state.Level) + 0.5f);
+}
+
+// Apply the controlled absolute targets by bridging over the WoW base: the bonus we add equals
+// target - (current - previouslyAppliedBonus). AppliedStats stores the bonus actually layered on.
 void ApplyStateStats(Player* player, MobaPlayerState& state)
 {
-    int32 const healthDelta = int32(state.Stats.BonusHealth) - int32(state.AppliedStats.BonusHealth);
-    if (healthDelta)
+    // Health.
     {
-        player->SetMaxHealth(std::max<int32>(1, int32(player->GetMaxHealth()) + healthDelta));
-        player->SetHealth(std::min<uint32>(player->GetMaxHealth(), uint32(std::max<int32>(1, int32(player->GetHealth()) + healthDelta))));
+        int32 const natural = int32(player->GetMaxHealth()) - int32(state.AppliedStats.Health);
+        int32 const bonus   = std::max<int32>(0, int32(state.Stats.Health) - natural);
+        int32 const delta   = bonus - int32(state.AppliedStats.Health);
+        if (delta)
+        {
+            player->SetMaxHealth(uint32(std::max<int32>(1, int32(player->GetMaxHealth()) + delta)));
+            player->SetHealth(std::min<uint32>(player->GetMaxHealth(), uint32(std::max<int32>(1, int32(player->GetHealth()) + delta))));
+        }
+        state.AppliedStats.Health = uint32(bonus);
     }
 
-    int32 const armorDelta = int32(state.Stats.Armor) - int32(state.AppliedStats.Armor);
-    if (armorDelta)
-        player->SetArmor(player->GetArmor() + armorDelta);
+    // Armor.
+    {
+        int32 const natural = int32(player->GetArmor()) - int32(state.AppliedStats.Armor);
+        int32 const bonus   = std::max<int32>(0, int32(state.Stats.Armor) - natural);
+        int32 const delta   = bonus - int32(state.AppliedStats.Armor);
+        if (delta)
+            player->SetArmor(std::max<int32>(0, player->GetArmor() + delta));
+        state.AppliedStats.Armor = uint32(bonus);
+    }
 
-    int32 const magicResistDelta = int32(state.Stats.MagicResist) - int32(state.AppliedStats.MagicResist);
-    if (magicResistDelta)
-        for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
-            player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) + magicResistDelta);
-
-    state.AppliedStats = state.Stats;
+    // Magic resistance (uniform across the magic schools).
+    {
+        int32 const natural = int32(player->GetResistance(SPELL_SCHOOL_FROST)) - int32(state.AppliedStats.MagicResist);
+        int32 const bonus   = std::max<int32>(0, int32(state.Stats.MagicResist) - natural);
+        int32 const delta   = bonus - int32(state.AppliedStats.MagicResist);
+        if (delta)
+            for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+                player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) + delta);
+        state.AppliedStats.MagicResist = uint32(bonus);
+    }
 }
 
 void RemoveAppliedStateStats(Player* player, MobaPlayerState& state)
 {
-    if (state.AppliedStats.BonusHealth)
+    if (state.AppliedStats.Health)
     {
-        int32 const healthDelta = -int32(state.AppliedStats.BonusHealth);
-        player->SetMaxHealth(std::max<int32>(1, int32(player->GetMaxHealth()) + healthDelta));
+        int32 const healthDelta = -int32(state.AppliedStats.Health);
+        player->SetMaxHealth(uint32(std::max<int32>(1, int32(player->GetMaxHealth()) + healthDelta)));
         player->SetHealth(std::min<uint32>(player->GetMaxHealth(), player->GetHealth()));
     }
 
     if (state.AppliedStats.Armor)
-        player->SetArmor(player->GetArmor() - int32(state.AppliedStats.Armor));
+        player->SetArmor(std::max<int32>(0, player->GetArmor() - int32(state.AppliedStats.Armor)));
 
     if (state.AppliedStats.MagicResist)
         for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
@@ -546,10 +573,21 @@ void UpdateRespawns(uint32 /*diff*/)
         if (state.RespawnAtMs == 0)
         {
             // If the finishing blow came from a minion/tower (no player credited via HandleKillPlayer)
-            // but an enemy champion damaged us recently, that champion still gets the kill (LoL-style).
+            // but an enemy champion damaged us recently, that champion still gets the kill (LoL-style),
+            // including the scoreboard line the base HandleKillPlayer would otherwise have written.
             if (state.LastDamagerKey && now - state.LastDamageMs <= MobaKillCreditWindowMs)
+            {
                 if (Player* damager = FindOnlinePlayer(state.LastDamagerKey))
+                {
+                    if (Battleground* bg = player->GetBattleground())
+                    {
+                        bg->UpdatePlayerScore(player, SCORE_DEATHS, 1);
+                        bg->UpdatePlayerScore(damager, SCORE_KILLING_BLOWS, 1);
+                        bg->UpdatePlayerScore(damager, SCORE_HONORABLE_KILLS, 1);
+                    }
                     OnChampionKilled(damager, player);
+                }
+            }
 
             uint32 const respawnMs = MobaRespawnBaseMs + state.Level * MobaRespawnPerLevelMs;
             state.RespawnAtMs = now + respawnMs;

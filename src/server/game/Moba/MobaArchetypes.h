@@ -39,6 +39,18 @@ struct Archetype
 extern Archetype const Archetypes[];
 extern std::size_t const ArchetypeCount;
 
+// LoL-style controlled defensive stats per archetype: an absolute base value plus a per-level
+// growth. The total at a MOBA level uses League's increasing-growth curve (see MobaProgression),
+// so champions are balanced against each other regardless of the hidden WoW class underneath.
+struct ArchetypeStatCurve
+{
+    float HealthBase;       float HealthGrowth;
+    float ArmorBase;        float ArmorGrowth;
+    float MagicResistBase;  float MagicResistGrowth;
+};
+
+ArchetypeStatCurve const& GetArchetypeStatCurve(uint32 archetypeIndex);
+
 void ApplyArchetype(Player* player, Archetype const& archetype);
 void MaxArchetypeSkills(Player* player, uint32 archetypeIndex);
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);

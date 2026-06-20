@@ -14,13 +14,12 @@ class Unit;
 
 namespace Moba
 {
-// MOBA combat stats layered on top of the (hidden) base WoW class. Bonuses are tracked so
-// they can be re-applied after a GiveLevel rebuilds the base, and removed when the match ends.
+// Controlled MOBA combat stats. In `Stats` these are the absolute target values for the current
+// level (from the archetype curve); in `AppliedStats` they are the bonus we layered over the WoW
+// base to reach those targets (tracked so we can re-bridge after a GiveLevel and undo at match end).
 struct MobaStats
 {
-    uint32 BonusHealth = 0;
-    uint32 AttackDamage = 0;
-    uint32 SpellPower = 0;
+    uint32 Health = 0;
     uint32 Armor = 0;
     uint32 MagicResist = 0;
 };

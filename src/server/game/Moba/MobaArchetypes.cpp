@@ -91,6 +91,32 @@ Archetype const Archetypes[] =
 
 std::size_t const ArchetypeCount = sizeof(Archetypes) / sizeof(Archetypes[0]);
 
+// Controlled combat stats per archetype, LoL-scaled. Order MUST match Archetypes[] above.
+// At MOBA level 18 the total equals base + 17 * growth (the LoL curve multiplier is 1.0 there).
+// Squishies (mage/marksman/assassin) are frailer with lower resistances; tank/bruiser get more.
+ArchetypeStatCurve const ArchetypeStatCurves[] =
+{
+    // Briseur (bruiser)   HP                Armor          MagicResist
+    {                      640.f, 100.f,     34.f, 4.0f,    32.f, 1.5f  },
+    // Arcaniste (burst mage)
+    {                      560.f,  90.f,     20.f, 3.5f,    30.f, 1.3f  },
+    // Gardien (tank)
+    {                      680.f, 115.f,     38.f, 5.0f,    32.f, 2.05f },
+    // Assassin
+    {                      600.f,  95.f,     28.f, 3.8f,    30.f, 1.3f  },
+    // Rodeur (marksman)
+    {                      580.f,  90.f,     26.f, 4.0f,    30.f, 1.3f  },
+    // Sorcier (mage)
+    {                      560.f,  88.f,     20.f, 3.5f,    30.f, 1.3f  },
+};
+
+ArchetypeStatCurve const& GetArchetypeStatCurve(uint32 archetypeIndex)
+{
+    if (archetypeIndex >= ArchetypeCount)
+        archetypeIndex = 0;
+    return ArchetypeStatCurves[archetypeIndex];
+}
+
 namespace
 {
 // Remove every learned spell so no trace of the original class remains.
