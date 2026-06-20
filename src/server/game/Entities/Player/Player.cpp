@@ -72,6 +72,7 @@
 #include "MailPackets.h"
 #include "MapManager.h"
 #include "MiscPackets.h"
+#include "MobaProgression.h"
 #include "MotionMaster.h"
 #include "MovementPackets.h"
 #include "ObjectAccessor.h"
@@ -4771,6 +4772,18 @@ void Player::RepopAtGraveyard()
 {
     // note: this can be called also when the player is alive
     // for example from WorldSession::HandleMovementOpcodes
+
+    // MOBA: a dead champion releases into a free-roaming spectator ghost and only ever respawns on
+    // the match timer (driven by the MOBA module). Never auto-resurrect it or send it to a graveyard.
+    // BuildPlayerRepop (called just before this) re-created a reclaimable corpse: turn it to bones so
+    // it cannot be reclaimed for an instant self-rez.
+    if (Moba::BlocksGraveyardResurrect(this))
+    {
+        SpawnCorpseBones();
+        m_deathTimer = 0;
+        RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
+        return;
+    }
 
     AreaTableEntry const* zone = sAreaTableStore.LookupEntry(GetAreaId());
 

@@ -86,6 +86,26 @@ that display `POWER_RAGE`.
 **Why:** the Briseur archetype uses warrior stances and the rage resource; without this
 the power bar can flip away from rage on stance change.
 
+### 8. `src/server/game/Entities/Player/Player.cpp` — `Player::RepopAtGraveyard`
+Early-out guard at the top: if `Moba::BlocksGraveyardResurrect(this)` (a dead champion in an
+active MOBA match), call `SpawnCorpseBones()` (turns the corpse `BuildPlayerRepop` just created
+into non-reclaimable bones), clear `m_deathTimer`, remove `PLAYER_FLAGS_IS_OUT_OF_BOUNDS` and
+return — skipping the vanilla auto-resurrect / graveyard teleport entirely.
+(Also includes `#include "MobaProgression.h"`.)
+
+**Why:** on the custom MOBA map there is no graveyard and the position can sit below the map's
+min-height, so vanilla `RepopAtGraveyard` auto-resurrects the player on release ("instant rez").
+The guard lets a dead champion release into a free-roaming spectator ghost while reserving the
+only respawn to the level-scaled match timer (`Moba::UpdateRespawns`, respawns at the team base).
+
+### 9. `src/server/game/Handlers/MiscHandler.cpp` — `WorldSession::HandleReclaimCorpse`
+Early-out guard after the `IsAlive()` check: if `Moba::BlocksGraveyardResurrect(_player)`, return.
+(Also includes `#include "MobaProgression.h"`.)
+
+**Why:** MOBA maps are instanceable, so the corpse-reclaim delay is `0` and the released ghost sits
+on its own corpse — letting the player reclaim it for an instant self-rez. This blocks that path so
+respawn stays governed only by the match timer.
+
 ---
 
 ## Config (additive, low conflict risk)

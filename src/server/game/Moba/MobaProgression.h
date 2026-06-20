@@ -40,6 +40,7 @@ struct MobaPlayerState
     MobaStats AppliedStats;
     uint32 MatchElapsedMs = 0;
     uint32 PassiveGoldTimerMs = 0;
+    uint32 RespawnAtMs = 0;          // 0 = alive; otherwise the GameTimeMS at which to respawn
     bool ProgressInitialized = false;
 };
 
@@ -56,8 +57,13 @@ void ReapplyPlayerMatchState(Player* player);           // re-apply stats + re-s
 void OnMinionKilled(Unit* killer, Creature* minion);    // last-hit gold + shared XP
 uint32 GetPlayerMobaLevel(Player const* player);
 
-// Periodic tick (driven once per world update by a thin script hook).
+// True for a dead champion in an active match: it must never auto-resurrect or teleport to a
+// graveyard. It releases into a free-roaming spectator ghost; only the match timer respawns it.
+bool BlocksGraveyardResurrect(Player const* player);
+
+// Periodic ticks (driven once per world update by a thin script hook).
 void UpdatePassiveGold(uint32 diff);
+void UpdateRespawns(uint32 diff);   // dead champions respawn at base after a level-scaled timer
 }
 
 #endif

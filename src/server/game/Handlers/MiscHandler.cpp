@@ -39,6 +39,7 @@
 #include "Log.h"
 #include "MapManager.h"
 #include "MiscPackets.h"
+#include "MobaProgression.h"
 #include "MovementPackets.h"
 #include "Object.h"
 #include "ObjectAccessor.h"
@@ -547,6 +548,10 @@ void WorldSession::HandleReclaimCorpse(WorldPackets::Misc::ReclaimCorpse& /*pack
     TC_LOG_DEBUG("network", "WORLD: Received CMSG_RECLAIM_CORPSE");
 
     if (_player->IsAlive())
+        return;
+
+    // MOBA: champions cannot reclaim their corpse; respawn is driven only by the match timer.
+    if (Moba::BlocksGraveyardResurrect(_player))
         return;
 
     // do not allow corpse reclaim in arena

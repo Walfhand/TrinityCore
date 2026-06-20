@@ -315,6 +315,7 @@ public:
     void OnUpdate(uint32 diff) override
     {
         Moba::UpdatePassiveGold(diff);
+        Moba::UpdateRespawns(diff);
     }
 };
 

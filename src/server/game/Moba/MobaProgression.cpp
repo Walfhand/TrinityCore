@@ -4,9 +4,11 @@
 
 #include "MobaProgression.h"
 #include "MobaArchetypes.h"
+#include "MobaMapConfig.h"
 
 #include "Battleground.h"
 #include "Creature.h"
+#include "GameTime.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -333,6 +335,15 @@ uint32 GetPlayerMobaLevel(Player const* player)
     return MobaStartLevel;
 }
 
+bool BlocksGraveyardResurrect(Player const* player)
+{
+    if (player->IsAlive())
+        return false;   // only governs the dead state; alive callers keep vanilla behavior
+
+    MobaPlayerState const* state = GetPlayerState(player);
+    return state && state->ProgressInitialized && player->InBattleground();
+}
+
 // Passive gold trickle (LoL-style): once a champion has been in the match past the start
 // delay, grant a fixed amount of gold every interval. Driven by a thin world-update hook.
 void UpdatePassiveGold(uint32 diff)
@@ -361,6 +372,69 @@ void UpdatePassiveGold(uint32 diff)
         state.Gold += gained;
         player->SetMoney(state.Gold * MobaCopperPerGold);
         player->GetSession()->SendNotification("+%u gold (passif). Total: %u gold.", gained, state.Gold);
+    }
+}
+
+namespace
+{
+void TeleportToBase(Player* player)
+{
+    MapLayout const* map = GetMobaMapLayout(player->GetMapId());
+    if (!map)
+        return;
+
+    Position const& base = player->GetBGTeam() == BlueTeamId ? map->BlueBase : map->RedBase;
+    player->TeleportTo(player->GetMapId(), base.GetPositionX(), base.GetPositionY(), base.GetPositionZ(), base.GetOrientation());
+}
+
+void RespawnAtBase(Player* player)
+{
+    player->ResurrectPlayer(1.0f);
+    player->SpawnCorpseBones();
+    player->SetFullHealth();
+    player->SetPower(player->GetPowerType(), player->GetMaxPower(player->GetPowerType()));
+    TeleportToBase(player);
+}
+}
+
+// Champion death/respawn: detect dead champions (killed by anything) and respawn them at the team
+// base after a level-scaled timer. Poll-based so it catches deaths from towers/minions/etc. The
+// player is free to release into a roaming ghost meanwhile; all self-resurrect paths (graveyard
+// auto-rez, corpse reclaim) are blocked in the core so only this timer ever brings them back.
+void UpdateRespawns(uint32 /*diff*/)
+{
+    uint32 const now = GameTime::GetGameTimeMS();
+
+    for (auto& entry : PlayerStates)
+    {
+        MobaPlayerState& state = entry.second;
+        if (!state.ProgressInitialized)
+            continue;
+
+        Player* player = FindOnlinePlayer(entry.first);
+        if (!player || !player->InBattleground())
+            continue;
+
+        if (player->IsAlive())
+        {
+            state.RespawnAtMs = 0;
+            continue;
+        }
+
+        // Dead: start the timer on the first detection.
+        if (state.RespawnAtMs == 0)
+        {
+            uint32 const respawnMs = MobaRespawnBaseMs + state.Level * MobaRespawnPerLevelMs;
+            state.RespawnAtMs = now + respawnMs;
+            player->GetSession()->SendNotification("Mort. Reapparition dans %u s.", respawnMs / 1000);
+            continue;
+        }
+
+        if (now < state.RespawnAtMs)
+            continue;
+
+        state.RespawnAtMs = 0;
+        RespawnAtBase(player);
     }
 }
 }

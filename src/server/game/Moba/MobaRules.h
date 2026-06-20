@@ -75,6 +75,10 @@ inline constexpr uint32 MobaPassiveGoldStartMs = 110000;    // first trickle at 
 inline constexpr uint32 MobaPassiveGoldIntervalMs = 10000;  // granted every 10 seconds
 inline constexpr uint32 MobaPassiveGoldAmount = 20;         // gold per interval (LoL is 20.4)
 
+// Champion respawn timer (LoL-style: scales with level). respawn = base + level * perLevel.
+inline constexpr uint32 MobaRespawnBaseMs = 5000;
+inline constexpr uint32 MobaRespawnPerLevelMs = 2500;
+
 inline constexpr uint8 MobaNexusLevel = 1;            // low level so any champion lands hits reliably
 inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a real objective, not instant
 
