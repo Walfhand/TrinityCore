@@ -3,6 +3,8 @@
  */
 
 #include "BattlegroundMoba.h"
+#include "BattlegroundPackets.h"
+#include "BattlegroundScore.h"
 #include "Creature.h"
 #include "Log.h"
 #include "Map.h"
@@ -12,6 +14,18 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "WorldStatePackets.h"
+
+namespace
+{
+// Minimal per-player score so champions appear in the end-of-match scoreboard. The base PvP
+// columns (kills/deaths/damage/healing/honor) are shown; no MOBA-specific objective columns yet.
+struct BattlegroundMobaScore : public BattlegroundScore
+{
+    explicit BattlegroundMobaScore(ObjectGuid playerGuid) : BattlegroundScore(playerGuid) { }
+
+    void BuildObjectivesBlock(WorldPackets::Battleground::PVPLogData_Player& /*playerData*/) override { }
+};
+}
 
 BattlegroundMoba::BattlegroundMoba()
 {
@@ -35,6 +49,10 @@ void BattlegroundMoba::AddPlayer(Player* player)
 
     if (!player)
         return;
+
+    // Register a score so the player shows up in the end-of-match scoreboard (kept across reconnect).
+    if (PlayerScores.find(player->GetGUID()) == PlayerScores.end())
+        PlayerScores[player->GetGUID()] = new BattlegroundMobaScore(player->GetGUID());
 
     player->SetFaction(Moba::GetFactionForTeamId(player->GetBGTeam()));
 

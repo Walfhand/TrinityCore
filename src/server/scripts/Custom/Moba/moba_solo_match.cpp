@@ -279,7 +279,20 @@ public:
 
     void OnLogout(Player* player) override
     {
+        // In an active match: keep the MOBA state so a reconnect resumes it (the BG keeps the
+        // player offline meanwhile). Only abandon while still in queue/lobby.
+        if (player->InBattleground())
+            return;
+
         Moba::AbandonPlayerMatch(player);
+    }
+
+    void OnLogin(Player* player, bool /*firstLogin*/) override
+    {
+        // Reconnect into a running match: re-apply MOBA stats and re-sync the client (XP bar,
+        // money) since the reloaded Player object lost the in-memory bonuses.
+        if (player->InBattleground())
+            Moba::ReapplyPlayerMatchState(player);
     }
 
     void OnMapChanged(Player* player) override

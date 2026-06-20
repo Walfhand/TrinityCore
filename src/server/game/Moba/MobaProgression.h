@@ -52,6 +52,7 @@ void RemovePlayerProgress(Player* player);              // drop applied stats + 
 // Per-player progression ------------------------------------------------------------------
 void SetPlayerArchetype(Player* player, uint32 archetypeIndex);
 void InitializePlayerMatchProgress(Player* player);     // reset to level 1 and push to client at match start
+void ReapplyPlayerMatchState(Player* player);           // re-apply stats + re-sync client after a reconnect
 void OnMinionKilled(Unit* killer, Creature* minion);    // last-hit gold + shared XP
 uint32 GetPlayerMobaLevel(Player const* player);
 
