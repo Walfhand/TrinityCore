@@ -7,6 +7,7 @@
 #include "Cell.h"
 #include "CellImpl.h"
 #include "Creature.h"
+#include "EventProcessor.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -32,6 +33,9 @@ namespace
 struct TowerState
 {
     uint32 Team = InvalidTeamId;
+    uint32 InstanceId = 0;
+    uint32 Lane = 0;
+    uint32 Ord = 0;
     ObjectGuid ForcedTarget;
     uint32 ForcedTargetExpireMs = 0;
     uint32 RampStacks = 0;          // consecutive champion shots (tower-level; persists across switches)
@@ -119,6 +123,51 @@ Unit* GetTowerForcedTarget(Creature* tower)
 
     return target;
 }
+
+// A tower is "alive" while its state exists (erased on death). Used to compute gating order.
+bool HasAliveTower(uint32 instanceId, uint32 team, uint32 lane)
+{
+    for (auto const& entry : TowerStates)
+    {
+        TowerState const& s = entry.second;
+        if (s.InstanceId == instanceId && s.Team == team && s.Lane == lane)
+            return true;
+    }
+    return false;
+}
+
+// Guaranteed damage (no spell hit roll), with the combat log + spell-school impact.
+void DealTowerDamage(Creature* tower, Unit* target, uint32 damage)
+{
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(MobaTowerShotSpell);
+    SpellSchoolMask const school = spellInfo ? spellInfo->GetSchoolMask() : SPELL_SCHOOL_MASK_NORMAL;
+
+    SpellNonMeleeDamage log(tower, target, MobaTowerShotSpell, school);
+    log.damage = damage;
+    tower->SendSpellNonMeleeDamageLog(&log);
+    Unit::DealDamage(tower, target, damage, nullptr, SPELL_DIRECT_DAMAGE, school, spellInfo, false);
+}
+
+// Applies the shot's damage when the visual bolt reaches the target (kept on the tower's event
+// processor, so it is cancelled if the tower dies first).
+class TowerDamageEvent : public BasicEvent
+{
+public:
+    TowerDamageEvent(Creature* tower, ObjectGuid target, uint32 damage) : _tower(tower), _target(target), _damage(damage) { }
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (Unit* target = ObjectAccessor::GetUnit(*_tower, _target))
+            if (target->IsAlive() && _tower->IsValidAttackTarget(target))
+                DealTowerDamage(_tower, target, _damage);
+        return true;
+    }
+
+private:
+    Creature* _tower;
+    ObjectGuid _target;
+    uint32 _damage;
+};
 }
 
 void ApplyTowerTuning(Creature* tower)
@@ -135,7 +184,7 @@ void ApplyTowerTuning(Creature* tower)
     TowerStates[GetTowerKey(tower)].Team = GetTeamIdForTowerEntry(tower->GetEntry());
 }
 
-void SpawnTower(Map* map, uint32 teamId, Position const& pos)
+void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const& pos)
 {
     uint32 const entry = GetTowerEntry(teamId);
     if (!map || !entry)
@@ -150,6 +199,12 @@ void SpawnTower(Map* map, uint32 teamId, Position const& pos)
 
     tower->SetFaction(GetFactionForTeamId(teamId));
     ApplyTowerTuning(tower);
+
+    TowerState& state = TowerStates[GetTowerKey(tower)];
+    state.Team = teamId;
+    state.InstanceId = map->GetInstanceId();
+    state.Lane = lane;
+    state.Ord = ord;
 }
 
 Unit* SelectTowerTarget(Creature* tower, Unit* currentVictim)
@@ -220,19 +275,21 @@ void TowerShoot(Creature* tower, Unit* target)
     }
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(MobaTowerShotSpell);
-    SpellSchoolMask const school = spellInfo ? spellInfo->GetSchoolMask() : SPELL_SCHOOL_MASK_NORMAL;
 
-    // Flying bolt visual only (0 damage); the real damage is dealt directly below so a level-1
-    // tower never misses (no spell hit roll).
+    // Flying bolt visual (0 damage so it neither double-hits nor "misses").
     CastSpellExtraArgs args(true);
     args.AddSpellMod(SPELLVALUE_BASE_POINT0, 0);
     tower->CastSpell(target, MobaTowerShotSpell, args);
 
-    // Guaranteed damage + combat log (towers always hit at full damage).
-    SpellNonMeleeDamage log(tower, target, MobaTowerShotSpell, school);
-    log.damage = damage;
-    tower->SendSpellNonMeleeDamageLog(&log);
-    Unit::DealDamage(tower, target, damage, nullptr, SPELL_DIRECT_DAMAGE, school, spellInfo, false);
+    // Apply the real (guaranteed) damage when the bolt reaches the target, matching its travel time.
+    uint32 delayMs = 0;
+    if (spellInfo && spellInfo->Speed > 0.0f)
+        delayMs = uint32(tower->GetDistance(target) / spellInfo->Speed * 1000.0f);
+
+    if (delayMs == 0)
+        DealTowerDamage(tower, target, damage);
+    else
+        tower->m_Events.AddEventAtOffset(new TowerDamageEvent(tower, target->GetGUID(), damage), Milliseconds(delayMs));
 }
 
 void NotifyTowerAggro(Unit* attacker, Unit* victim)
@@ -270,5 +327,75 @@ void ClearTowerState(Creature* tower)
 {
     if (tower)
         TowerStates.erase(GetTowerKey(tower));
+}
+
+bool IsTowerVulnerable(Creature const* tower)
+{
+    if (!tower)
+        return true;
+
+    auto itr = TowerStates.find(GetTowerKey(tower));
+    if (itr == TowerStates.end())
+        return true;   // unknown -> attackable
+
+    TowerState const& self = itr->second;
+
+    if (self.Lane == MobaNexusTowerLane)
+    {
+        // Nexus towers open once at least one lane (0..2) of this team is fully cleared.
+        for (uint32 lane = 0; lane < 3; ++lane)
+            if (!HasAliveTower(self.InstanceId, self.Team, lane))
+                return true;
+        return false;
+    }
+
+    // Lane tower: invulnerable while any more-outer (lower ord) tower on its lane is alive.
+    for (auto const& entry : TowerStates)
+    {
+        TowerState const& other = entry.second;
+        if (other.InstanceId == self.InstanceId && other.Team == self.Team && other.Lane == self.Lane && other.Ord < self.Ord)
+            return false;
+    }
+    return true;
+}
+
+bool IsNexusVulnerable(uint32 instanceId, uint32 teamId)
+{
+    return !HasAliveTower(instanceId, teamId, MobaNexusTowerLane);
+}
+
+bool IsStructureAttackBlocked(WorldObject const* attacker, WorldObject const* target)
+{
+    Creature const* structure = target ? target->ToCreature() : nullptr;
+    if (!structure)
+        return false;
+
+    uint32 const entry = structure->GetEntry();
+    bool const tower = IsTowerEntry(entry);
+    bool const nexus = IsNexusEntry(entry);
+    if (!tower && !nexus)
+        return false;
+
+    uint32 const structureTeam = tower ? GetTeamIdForTowerEntry(entry) : GetTeamIdForNexusEntry(entry);
+    uint32 const attackerTeam = GetUnitMobaTeam(attacker ? attacker->ToUnit() : nullptr);
+
+    if (attackerTeam == structureTeam)
+        return true;   // never attack your own structures
+
+    if (tower)
+        return !IsTowerVulnerable(structure);
+
+    return !IsNexusVulnerable(structure->GetMap()->GetInstanceId(), structureTeam);
+}
+
+void OnTowerDestroyed(Creature* tower)
+{
+    if (!tower)
+        return;
+
+    uint32 const teamId = GetTeamIdForTowerEntry(tower->GetEntry());
+    tower->Yell(teamId == BlueTeamId ? "Une tour bleue est tombee !" : "Une tour rouge est tombee !", LANG_UNIVERSAL);
+
+    ClearTowerState(tower);
 }
 }

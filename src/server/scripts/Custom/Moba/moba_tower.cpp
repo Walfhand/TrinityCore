@@ -7,6 +7,7 @@
 #include "MobaTower.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
+#include "SpellAuras.h"
 #include "Unit.h"
 
 class npc_moba_tower : public CreatureScript
@@ -27,17 +28,41 @@ public:
             Moba::ApplyTowerTuning(me);
             me->SetReactState(REACT_PASSIVE);
             _shotTimer = 0;
+            _shieldTimer = 0;
         }
 
         void JustDied(Unit* /*killer*/) override
         {
-            Moba::ClearTowerState(me);
+            Moba::OnTowerDestroyed(me);
+        }
+
+        // Golden bubble while the tower is still protected by a more-outer tower (LoL gating).
+        void RefreshShield()
+        {
+            bool const wantShield = !Moba::IsTowerVulnerable(me);
+            bool const hasShield = me->HasAura(Moba::MobaStructureShieldSpell);
+            if (wantShield && !hasShield)
+            {
+                me->AddAura(Moba::MobaStructureShieldSpell, me);
+                if (Aura* aura = me->GetAura(Moba::MobaStructureShieldSpell))
+                    aura->SetDuration(-1);
+            }
+            else if (!wantShield && hasShield)
+                me->RemoveAurasDueToSpell(Moba::MobaStructureShieldSpell);
         }
 
         void MoveInLineOfSight(Unit* /*who*/) override { }
 
         void UpdateAI(uint32 diff) override
         {
+            if (_shieldTimer <= diff)
+            {
+                _shieldTimer = 1000;
+                RefreshShield();
+            }
+            else
+                _shieldTimer -= diff;
+
             if (_shotTimer > diff)
             {
                 _shotTimer -= diff;
@@ -62,6 +87,7 @@ public:
 
     private:
         uint32 _shotTimer = 0;
+        uint32 _shieldTimer = 0;
     };
 
     CreatureAI* GetAI(Creature* creature) const override

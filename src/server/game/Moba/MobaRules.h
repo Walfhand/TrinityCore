@@ -89,6 +89,8 @@ inline constexpr float MobaTowerRampPerShot = 0.40f;       // +40% per consecuti
 inline constexpr float MobaTowerRampMax = 1.20f;           // capped at +120% (220% total)
 inline constexpr uint32 MobaTowerRampResetMs = 5000;       // ramp resets 5s after the last champion hit
 inline constexpr uint32 MobaTowerShotSpell = 5176;         // visual bolt for the tower shot (placeholder)
+inline constexpr uint32 MobaNexusTowerLane = 9;            // lane id used for the nexus-guarding towers
+inline constexpr uint32 MobaStructureShieldSpell = 642;    // Divine Shield: golden bubble on invulnerable structures
 
 inline bool IsTeamId(uint32 teamId)
 {

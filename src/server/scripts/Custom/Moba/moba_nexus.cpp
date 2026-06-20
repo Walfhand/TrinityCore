@@ -7,8 +7,10 @@
 #include "Battleground.h"
 #include "Creature.h"
 #include "Map.h"
+#include "MobaTower.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellAuras.h"
 #include "Unit.h"
 #include "WorldSession.h"
 
@@ -33,6 +35,29 @@ public:
         void MoveInLineOfSight(Unit* /*who*/) override { }
 
         void AttackStart(Unit* /*who*/) override { }
+
+        void UpdateAI(uint32 diff) override
+        {
+            // Golden bubble while the nexus is still protected by its nexus towers (LoL gating).
+            if (_shieldTimer > diff)
+            {
+                _shieldTimer -= diff;
+                return;
+            }
+            _shieldTimer = 1000;
+
+            uint32 const teamId = Moba::GetTeamIdForNexusEntry(me->GetEntry());
+            bool const wantShield = !Moba::IsNexusVulnerable(me->GetMap()->GetInstanceId(), teamId);
+            bool const hasShield = me->HasAura(Moba::MobaStructureShieldSpell);
+            if (wantShield && !hasShield)
+            {
+                me->AddAura(Moba::MobaStructureShieldSpell, me);
+                if (Aura* aura = me->GetAura(Moba::MobaStructureShieldSpell))
+                    aura->SetDuration(-1);
+            }
+            else if (!wantShield && hasShield)
+                me->RemoveAurasDueToSpell(Moba::MobaStructureShieldSpell);
+        }
 
         void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
         {
@@ -84,6 +109,8 @@ public:
         }
 
     private:
+        uint32 _shieldTimer = 0;
+
         void MakePassive()
         {
             me->SetReactState(REACT_PASSIVE);

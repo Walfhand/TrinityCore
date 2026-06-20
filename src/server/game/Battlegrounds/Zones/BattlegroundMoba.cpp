@@ -94,7 +94,7 @@ void BattlegroundMoba::StartMobaMatch()
     layout.RedNexus = map->RedBase;
     layout.Lanes = map->Lanes;
     for (Moba::TowerSpawn const& tower : map->Towers)
-        layout.Towers.push_back({ tower.Team, tower.Pos });
+        layout.Towers.push_back({ tower.Team, tower.Lane, tower.Ord, tower.Pos });
 
     _moba.Start(GetBgMap(), layout);
 }

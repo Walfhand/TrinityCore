@@ -24,6 +24,8 @@ namespace Moba
 struct ArenaTower
 {
     uint32 Team = InvalidTeamId;
+    uint32 Lane = 0;
+    uint32 Ord = 0;
     Position Pos;
 };
 

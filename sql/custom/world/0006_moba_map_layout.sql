@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS `moba_lane_point` (
 -- Guerilla (map 900) -------------------------------------------------------------------
 DELETE FROM `moba_map` WHERE `mapId` = 900;
 INSERT INTO `moba_map` (`mapId`, `blueX`, `blueY`, `blueZ`, `blueO`, `redX`, `redY`, `redZ`, `redO`) VALUES
-(900, 3317.389160, 2012.633179, 9.346647, 2.410388, 3083.737549, 2249.815674, 5.446488, 5.544910);
+(900, 3339.809814, 1992.649170, 6.304052, 2.448874, 3055.435303, 2275.940430, 3.921213, 5.310864);
 
 DELETE FROM `moba_lane_point` WHERE `mapId` = 900;
 INSERT INTO `moba_lane_point` (`mapId`, `lane`, `idx`, `x`, `y`, `z`) VALUES

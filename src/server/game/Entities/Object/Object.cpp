@@ -30,6 +30,7 @@
 #include "Map.h"
 #include "MiscPackets.h"
 #include "MobaRules.h"
+#include "MobaTower.h"
 #include "MovementInfo.h"
 #include "MovementPackets.h"
 #include "ObjectAccessor.h"
@@ -2858,13 +2859,10 @@ bool WorldObject::IsValidAttackTarget(WorldObject const* target, SpellInfo const
 {
     ASSERT(target);
 
-    if (Player const* playerAttacker = GetAffectingPlayer())
-        if (playerAttacker->GetBattleground())
-            if (Creature const* creatureTarget = target->ToCreature())
-            {
-                if (Moba::IsOwnNexus(playerAttacker->GetBGTeam(), creatureTarget->GetEntry()))
-                    return false;
-            }
+    // MOBA structures: block attacks on your own tower/nexus, and on enemy ones still protected
+    // by the LoL gating (outer tower alive, nexus towers alive). Cheap no-op for non-MOBA targets.
+    if (Moba::IsStructureAttackBlocked(this, target))
+        return false;
 
     // some positive spells can be casted at hostile target
     bool isPositiveSpell = bySpell && bySpell->IsPositive();
