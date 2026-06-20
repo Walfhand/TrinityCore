@@ -21,6 +21,7 @@ void AddSC_moba_minion();
 void AddSC_moba_nexus();
 void AddSC_moba_solo_match();
 void AddSC_moba_spells();
+void AddSC_moba_tower();
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -31,4 +32,5 @@ void AddCustomScripts()
     AddSC_moba_nexus();
     AddSC_moba_solo_match();
     AddSC_moba_spells();
+    AddSC_moba_tower();
 }

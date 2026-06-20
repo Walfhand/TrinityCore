@@ -8,6 +8,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MobaRules.h"
+#include "MobaTower.h"
 #include "Player.h"
 #include "TemporarySummon.h"
 
@@ -68,6 +69,9 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
     _started = true;
 
     SpawnNexuses();
+    for (ArenaTower const& tower : _layout.Towers)
+        SpawnTower(_map, tower.Team, tower.Pos);
+
     Seconds const firstWaveDelay = _lanes.empty() ? Seconds(30) : _lanes.front().FirstWaveDelay;
     _events.ScheduleEvent(EVENT_SPAWN_WAVE, firstWaveDelay);
 

@@ -6,6 +6,7 @@
 
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "MobaRules.h"
 
 #include <unordered_map>
 
@@ -55,8 +56,30 @@ void LoadMobaMaps()
         } while (result->NextRow());
     }
 
+    uint32 towers = 0;
+    if (QueryResult result = WorldDatabase.Query("SELECT mapId, team, lane, ord, x, y, z, o FROM moba_tower ORDER BY mapId, team, lane, ord"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 const mapId = fields[0].GetUInt32();
+
+            auto itr = g_layouts.find(mapId);
+            if (itr == g_layouts.end())
+                continue;
+
+            TowerSpawn tower;
+            tower.Team = fields[1].GetUInt8() == 0 ? BlueTeamId : RedTeamId;
+            tower.Lane = fields[2].GetUInt32();
+            tower.Ord = fields[3].GetUInt32();
+            tower.Pos = Position(fields[4].GetFloat(), fields[5].GetFloat(), fields[6].GetFloat(), fields[7].GetFloat());
+            itr->second.Towers.push_back(tower);
+            ++towers;
+        } while (result->NextRow());
+    }
+
     g_loaded = true;
-    TC_LOG_INFO("server.loading", "MOBA: loaded {} map layout(s), {} lane waypoint(s)", g_layouts.size(), points);
+    TC_LOG_INFO("server.loading", "MOBA: loaded {} map layout(s), {} lane waypoint(s), {} tower(s)", g_layouts.size(), points, towers);
 }
 
 MapLayout const* GetMobaMapLayout(uint32 mapId)

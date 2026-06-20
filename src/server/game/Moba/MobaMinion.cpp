@@ -104,6 +104,9 @@ uint32 GetUnitMobaTeam(Unit const* unit)
         if (IsMinionEntry(creature->GetEntry()))
             return GetTeamIdForMinionEntry(creature->GetEntry());
 
+        if (IsTowerEntry(creature->GetEntry()))
+            return GetTeamIdForTowerEntry(creature->GetEntry());
+
         if (IsNexusEntry(creature->GetEntry()))
             return GetTeamIdForNexusEntry(creature->GetEntry());
     }
@@ -170,6 +173,9 @@ uint32 GetTargetPriority(Creature const* minion, Unit const* candidate)
 
         return 60;
     }
+
+    if (IsTowerEntry(creature->GetEntry()))
+        return 50;   // push the enemy tower: after clearing enemy minions, before chasing champions
 
     if (IsNexusEntry(creature->GetEntry()))
     {

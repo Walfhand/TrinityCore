@@ -7,6 +7,7 @@
 
 #include "Creature.h"
 #include "MobaMinion.h"
+#include "MobaTower.h"
 #include "MotionMaster.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -170,6 +171,7 @@ public:
             return;
 
         Moba::NotifyChampionAggro(attacker, victim);
+        Moba::NotifyTowerAggro(attacker, victim);
     }
 };
 

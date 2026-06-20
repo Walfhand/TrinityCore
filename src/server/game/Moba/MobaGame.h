@@ -21,11 +21,18 @@ namespace Moba
 {
 // Map-agnostic description of a MOBA arena. A host map only has to provide these
 // positions; everything else (nexus spawning, waves, win detection) is generic.
+struct ArenaTower
+{
+    uint32 Team = InvalidTeamId;
+    Position Pos;
+};
+
 struct ArenaLayout
 {
     Position BlueNexus;
     Position RedNexus;
     std::vector<std::vector<Position>> Lanes;   // each lane is a path in Blue->Red order
+    std::vector<ArenaTower> Towers;
 };
 
 // Drives the MOBA match rules independently of any specific map or Battleground.

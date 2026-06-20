@@ -45,6 +45,8 @@ enum Constants
     NpcRedMinionCaster = 900006,
     NpcBlueMinionSiege = 900007,
     NpcRedMinionSiege = 900008,
+    NpcBlueTower = 900010,
+    NpcRedTower = 900011,
     ActionJoinMatch = 1100,
     ActionJoinDevSolo = 1101,
     MapGmIsland = 1,
@@ -76,6 +78,18 @@ inline constexpr uint32 MobaPassiveGoldAmount = 20;         // gold per interval
 inline constexpr uint8 MobaNexusLevel = 1;            // low level so any champion lands hits reliably
 inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a real objective, not instant
 
+// Towers, modeled on League of Legends turrets.
+inline constexpr uint8 MobaTowerLevel = 1;
+inline constexpr uint32 MobaTowerHealth = 4000;            // tanky structure
+inline constexpr float MobaTowerRange = 30.0f;             // attack range (LoL ~750 units)
+inline constexpr uint32 MobaTowerAttackIntervalMs = 1000;
+inline constexpr uint32 MobaTowerDamageVsMinion = 350;     // shreds minions
+inline constexpr uint32 MobaTowerDamageVsChampion = 120;   // base damage; ramps on consecutive shots
+inline constexpr float MobaTowerRampPerShot = 0.40f;       // +40% per consecutive shot on a champion
+inline constexpr float MobaTowerRampMax = 1.20f;           // capped at +120% (220% total)
+inline constexpr uint32 MobaTowerRampResetMs = 5000;       // ramp resets 5s after the last champion hit
+inline constexpr uint32 MobaTowerShotSpell = 5176;         // visual bolt for the tower shot (placeholder)
+
 inline bool IsTeamId(uint32 teamId)
 {
     return teamId == BlueTeamId || teamId == RedTeamId;
@@ -84,6 +98,29 @@ inline bool IsTeamId(uint32 teamId)
 inline bool IsNexusEntry(uint32 entry)
 {
     return entry == NpcBlueNexus || entry == NpcRedNexus;
+}
+
+inline bool IsTowerEntry(uint32 entry)
+{
+    return entry == NpcBlueTower || entry == NpcRedTower;
+}
+
+inline uint32 GetTeamIdForTowerEntry(uint32 entry)
+{
+    if (entry == NpcBlueTower)
+        return BlueTeamId;
+    if (entry == NpcRedTower)
+        return RedTeamId;
+    return InvalidTeamId;
+}
+
+inline uint32 GetTowerEntry(uint32 teamId)
+{
+    if (teamId == BlueTeamId)
+        return NpcBlueTower;
+    if (teamId == RedTeamId)
+        return NpcRedTower;
+    return 0;
 }
 
 inline bool IsMinionEntry(uint32 entry)
