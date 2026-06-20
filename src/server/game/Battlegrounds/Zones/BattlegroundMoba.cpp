@@ -64,14 +64,17 @@ void BattlegroundMoba::StartingEventOpenDoors()
 
 void BattlegroundMoba::StartMobaMatch()
 {
-    Moba::MapLayout const& map = Moba::GetGuerillaLayout();
+    Moba::MapLayout const* map = Moba::GetMobaMapLayout(GetMapId());
+    if (!map)
+    {
+        TC_LOG_ERROR("bg.battleground", "MOBA: no layout configured for map {} (table moba_map). Match not started.", GetMapId());
+        return;
+    }
 
     Moba::ArenaLayout layout;
-    layout.BlueNexus = map.BlueBase;
-    layout.RedNexus = map.RedBase;
-    layout.BlueMinionSpawn = map.BlueBase;
-    layout.RedMinionSpawn = map.RedBase;
-    layout.LaneWaypoints = map.MidLaneWaypoints;
+    layout.BlueNexus = map->BlueBase;
+    layout.RedNexus = map->RedBase;
+    layout.Lanes = map->Lanes;
 
     _moba.Start(GetBgMap(), layout);
 }

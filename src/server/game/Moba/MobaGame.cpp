@@ -44,16 +44,34 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
 
     _map = map;
     _layout = layout;
-    _lane = BuildSingleLaneConfig("moba-lane", layout.BlueMinionSpawn, layout.RedMinionSpawn);
-    _lane.Waypoints = layout.LaneWaypoints;
+
+    // One LaneConfig per authored lane: minions spawn at the near-base end and follow the
+    // path (Blue forward, Red reversed). Adding a lane = adding a waypoint list in the config.
+    _lanes.clear();
+    for (std::vector<Position> const& waypoints : layout.Lanes)
+    {
+        if (waypoints.empty())
+            continue;
+
+        LaneConfig lane;
+        lane.Name = "moba-lane";
+        lane.BlueSpawn = waypoints.front();
+        lane.RedSpawn = waypoints.back();
+        lane.BlueDestination = waypoints.back();
+        lane.RedDestination = waypoints.front();
+        lane.Waypoints = waypoints;
+        _lanes.push_back(lane);
+    }
+
     _waveNumber = 0;
     _elapsedMs = 0;
     _started = true;
 
     SpawnNexuses();
-    _events.ScheduleEvent(EVENT_SPAWN_WAVE, _lane.FirstWaveDelay);
+    Seconds const firstWaveDelay = _lanes.empty() ? Seconds(30) : _lanes.front().FirstWaveDelay;
+    _events.ScheduleEvent(EVENT_SPAWN_WAVE, firstWaveDelay);
 
-    TC_LOG_INFO("bg.battleground", "MOBA: match started in instance {}", map->GetInstanceId());
+    TC_LOG_INFO("bg.battleground", "MOBA: match started in instance {} ({} lanes)", map->GetInstanceId(), _lanes.size());
 }
 
 void MatchController::Update(uint32 diff)
@@ -99,6 +117,7 @@ void MatchController::SpawnWave()
 
     ++_waveNumber;
     MinionWavePlan const plan = PlanMinionWave(_waveNumber, _elapsedMs);
-    SpawnMinionWave(_map, _lane, _map->GetInstanceId(), plan);
+    for (LaneConfig const& lane : _lanes)
+        SpawnMinionWave(_map, lane, _map->GetInstanceId(), plan);
 }
 }

@@ -1,0 +1,58 @@
+-- MOBA map layout: bases (spawn + nexus) and lane waypoints, loaded by the core at startup
+-- (Moba::LoadMobaMaps). Edit coordinates here + `make db-custom` + restart worldserver to
+-- retune the map without a C++ rebuild.
+
+CREATE TABLE IF NOT EXISTS `moba_map` (
+    `mapId` INT UNSIGNED NOT NULL,
+    `blueX` FLOAT NOT NULL DEFAULT 0, `blueY` FLOAT NOT NULL DEFAULT 0, `blueZ` FLOAT NOT NULL DEFAULT 0, `blueO` FLOAT NOT NULL DEFAULT 0,
+    `redX`  FLOAT NOT NULL DEFAULT 0, `redY`  FLOAT NOT NULL DEFAULT 0, `redZ`  FLOAT NOT NULL DEFAULT 0, `redO`  FLOAT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`mapId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `moba_lane_point` (
+    `mapId` INT UNSIGNED NOT NULL,
+    `lane`  INT UNSIGNED NOT NULL,   -- 0,1,2... one entry per lane
+    `idx`   INT UNSIGNED NOT NULL,   -- waypoint order within the lane, Blue->Red
+    `x` FLOAT NOT NULL, `y` FLOAT NOT NULL, `z` FLOAT NOT NULL,
+    PRIMARY KEY (`mapId`, `lane`, `idx`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Guerilla (map 900) -------------------------------------------------------------------
+DELETE FROM `moba_map` WHERE `mapId` = 900;
+INSERT INTO `moba_map` (`mapId`, `blueX`, `blueY`, `blueZ`, `blueO`, `redX`, `redY`, `redZ`, `redO`) VALUES
+(900, 3317.389160, 2012.633179, 9.346647, 2.410388, 3083.737549, 2249.815674, 5.446488, 5.544910);
+
+DELETE FROM `moba_lane_point` WHERE `mapId` = 900;
+INSERT INTO `moba_lane_point` (`mapId`, `lane`, `idx`, `x`, `y`, `z`) VALUES
+-- Mid lane (crosses the bridge at idx 4)
+(900, 0, 0, 3307.284668, 2018.573975, 8.487104),
+(900, 0, 1, 3271.917969, 2057.500732, 6.153394),
+(900, 0, 2, 3239.360107, 2091.791504, 5.109375),
+(900, 0, 3, 3214.851318, 2117.604736, 7.437378),
+(900, 0, 4, 3196.680420, 2136.742676, 12.615769),
+(900, 0, 5, 3180.101318, 2155.558350, 6.434991),
+(900, 0, 6, 3145.687012, 2187.170410, 4.146327),
+(900, 0, 7, 3119.087158, 2211.604736, 1.557615),
+(900, 0, 8, 3084.145264, 2249.052246, 5.496557),
+-- Top lane
+(900, 1, 0, 3306.694580, 1985.101562, 7.012651),
+(900, 1, 1, 3248.965332, 1987.104614, 5.562799),
+(900, 1, 2, 3197.343994, 1988.123779, 6.513397),
+(900, 1, 3, 3160.646240, 1985.664795, 2.909364),
+(900, 1, 4, 3122.849365, 1990.638062, 3.834849),
+(900, 1, 5, 3102.208740, 2006.935425, 9.183692),
+(900, 1, 6, 3062.484131, 2037.801025, 6.876606),
+(900, 1, 7, 3034.802246, 2079.905762, 2.044935),
+(900, 1, 8, 3037.068848, 2155.620117, 1.956495),
+(900, 1, 9, 3043.621582, 2234.092773, 0.306473),
+-- Bot lane
+(900, 2, 0, 3349.771729, 2028.797119, 5.169067),
+(900, 2, 1, 3352.692627, 2067.523438, 4.201488),
+(900, 2, 2, 3356.199219, 2135.431396, 1.275381),
+(900, 2, 3, 3355.681836, 2172.955078, 2.563085),
+(900, 2, 4, 3342.837891, 2226.355469, 2.407943),
+(900, 2, 5, 3319.347900, 2257.925293, 2.498156),
+(900, 2, 6, 3305.634766, 2276.589844, 1.278494),
+(900, 2, 7, 3273.361328, 2289.575928, 2.717201),
+(900, 2, 8, 3164.439697, 2291.796387, 2.284000),
+(900, 2, 9, 3096.629883, 2292.769043, -0.130770);

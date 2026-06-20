@@ -25,9 +25,7 @@ struct ArenaLayout
 {
     Position BlueNexus;
     Position RedNexus;
-    Position BlueMinionSpawn;
-    Position RedMinionSpawn;
-    std::vector<Position> LaneWaypoints;   // lane path in Blue->Red order
+    std::vector<std::vector<Position>> Lanes;   // each lane is a path in Blue->Red order
 };
 
 // Drives the MOBA match rules independently of any specific map or Battleground.
@@ -49,7 +47,7 @@ private:
 
     Map* _map = nullptr;
     ArenaLayout _layout;
-    LaneConfig _lane;
+    std::vector<LaneConfig> _lanes;
     EventMap _events;
     uint32 _waveNumber = 0;
     uint32 _elapsedMs = 0;

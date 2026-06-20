@@ -120,10 +120,12 @@ bool InviteMatch(std::vector<Player*> const& players, uint32 blueCount, PvPDiffi
     bg->SetMinPlayersPerTeam(0);
     bg->SetMinPlayers(0);
 
-    // Port each team to its base (single source of truth in the game-lib map config).
-    Moba::MapLayout const& map = Moba::GetGuerillaLayout();
-    bg->SetTeamStartPosition(TEAM_ALLIANCE, map.BlueBase);
-    bg->SetTeamStartPosition(TEAM_HORDE, map.RedBase);
+    // Port each team to its base (data-driven, loaded from the world DB by map id).
+    if (Moba::MapLayout const* map = Moba::GetMobaMapLayout(bg->GetMapId()))
+    {
+        bg->SetTeamStartPosition(TEAM_ALLIANCE, map->BlueBase);
+        bg->SetTeamStartPosition(TEAM_HORDE, map->RedBase);
+    }
 
     // Keep the arena in queue status while the native popup is pending.
     // Trinity refuses to leave an arena queue once its status is WAIT_JOIN+.
