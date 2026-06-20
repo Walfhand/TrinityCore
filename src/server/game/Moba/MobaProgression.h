@@ -41,6 +41,9 @@ struct MobaPlayerState
     uint32 MatchElapsedMs = 0;
     uint32 PassiveGoldTimerMs = 0;
     uint32 RespawnAtMs = 0;          // 0 = alive; otherwise the GameTimeMS at which to respawn
+    uint32 KillStreak = 0;           // consecutive champion kills without dying (sizes the shutdown bounty)
+    uint32 LastDamagerKey = 0;       // last enemy champion that damaged this player (GUID counter); 0 = none
+    uint32 LastDamageMs = 0;         // GameTimeMS of that damage, for the kill-credit window
     bool ProgressInitialized = false;
 };
 
@@ -55,6 +58,8 @@ void SetPlayerArchetype(Player* player, uint32 archetypeIndex);
 void InitializePlayerMatchProgress(Player* player);     // reset to level 1 and push to client at match start
 void ReapplyPlayerMatchState(Player* player);           // re-apply stats + re-sync client after a reconnect
 void OnMinionKilled(Unit* killer, Creature* minion);    // last-hit gold + shared XP
+void OnChampionKilled(Player* killer, Player* victim);  // PvP kill: bounty to killer + assists, streak/shutdown
+void NoteChampionDamage(Unit* attacker, Unit* victim); // record the last enemy champion that hit a champion (kill credit)
 uint32 GetPlayerMobaLevel(Player const* player);
 
 // True for a dead champion in an active match: it must never auto-resurrect or teleport to a

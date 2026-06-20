@@ -319,6 +319,20 @@ public:
     }
 };
 
+// Tracks the last enemy champion to damage a champion, so a kill is still credited to that champion
+// when a minion or tower lands the finishing blow (LoL-style kill credit).
+class moba_combat_tracker : public UnitScript
+{
+public:
+    moba_combat_tracker() : UnitScript("moba_combat_tracker") { }
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (damage)
+            Moba::NoteChampionDamage(attacker, victim);
+    }
+};
+
 namespace
 {
 // Called by the core battlemaster-join hook (via the MobaQueue seam) when a player queues for
@@ -337,5 +351,6 @@ void AddSC_moba_solo_match()
 {
     new moba_match_player_script();
     new moba_passive_gold_world();
+    new moba_combat_tracker();
     Moba::SetBattlemasterJoinHandler(&DispatchMobaBattlemasterJoin);
 }

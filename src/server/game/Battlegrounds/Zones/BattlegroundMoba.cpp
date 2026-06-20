@@ -9,6 +9,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MobaMapConfig.h"
+#include "MobaProgression.h"
 #include "MobaRules.h"
 #include "Pet.h"
 #include "Player.h"
@@ -110,6 +111,15 @@ void BattlegroundMoba::HandleKillUnit(Creature* creature, Player* killer)
 
     TC_LOG_INFO("bg.battleground", "MOBA: nexus destroyed in instance {}, winner team {}", GetInstanceID(), winner);
     EndBattleground(winner);
+}
+
+void BattlegroundMoba::HandleKillPlayer(Player* victim, Player* killer)
+{
+    // Base handler updates the scoreboard (deaths / killing blows / assists) and insignia.
+    Battleground::HandleKillPlayer(victim, killer);
+
+    // MOBA-specific economy: bounty + shutdown to the killer, assist share to nearby allies.
+    Moba::OnChampionKilled(killer, victim);
 }
 
 void BattlegroundMoba::CheckWinConditions()

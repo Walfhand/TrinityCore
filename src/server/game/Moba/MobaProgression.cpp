@@ -7,11 +7,13 @@
 #include "MobaMapConfig.h"
 
 #include "Battleground.h"
+#include "Chat.h"
 #include "Creature.h"
 #include "GameTime.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "StringFormat.h"
 #include "WorldSession.h"
 
 #include <algorithm>
@@ -27,6 +29,14 @@ std::unordered_map<uint64, uint32> SelectedArchetypes;   // archetype chosen in 
 uint64 GetPlayerKey(Player const* player)
 {
     return player->GetGUID().GetCounter();
+}
+
+// Player feedback: show a center-screen notification AND a chat line, so a missed notification can
+// still be read in the chat log. Visual feedback is a temporary stopgap pending a proper UI pass.
+void Announce(Player* player, std::string const& message)
+{
+    player->GetSession()->SendNotification("%s", message.c_str());
+    ChatHandler(player->GetSession()).SendSysMessage(message);
 }
 
 Player* FindOnlinePlayer(uint64 playerKey)
@@ -93,8 +103,8 @@ void RemoveAppliedStateStats(Player* player, MobaPlayerState& state)
 
 void NotifyState(Player* player, MobaPlayerState const& state)
 {
-    player->GetSession()->SendNotification("MOBA: niveau %u, XP %u/%u, gold %u.",
-        state.Level, state.Xp, state.Level < MobaMaxLevel ? GetXpForNextLevel(state.Level) : 0, state.Gold);
+    Announce(player, Trinity::StringFormat("MOBA: niveau {}, XP {}/{}, gold {}.",
+        state.Level, state.Xp, state.Level < MobaMaxLevel ? GetXpForNextLevel(state.Level) : 0, state.Gold));
 }
 
 // Sync the WoW level to the MOBA level. GiveLevel rebuilds the base stats from the
@@ -154,7 +164,7 @@ void GrantPlayerXp(Player* player, MobaPlayerState& state, uint32 xp, bool notif
             UpdateArchetypeSpells(player, state.ArchetypeIndex, state.Level, true);
 
             if (notify)
-                player->GetSession()->SendNotification("Niveau MOBA %u atteint.", state.Level);
+                Announce(player, Trinity::StringFormat("Niveau MOBA {} atteint.", state.Level));
         }
     }
 
@@ -181,6 +191,13 @@ uint32 GetMinionXpReward(Creature const* minion)
     }
 }
 
+// Credit gold to a champion and mirror the total onto the client money widget.
+void AddGold(Player* player, MobaPlayerState& state, uint32 gold)
+{
+    state.Gold += gold;
+    player->SetMoney(state.Gold * MobaCopperPerGold);
+}
+
 // Last-hit gold: only the champion that landed the killing blow is paid.
 void RewardMinionGold(Player* killer, Creature* minion)
 {
@@ -189,9 +206,19 @@ void RewardMinionGold(Player* killer, Creature* minion)
         return;
 
     uint32 const gold = GetMinionGoldReward(minion);
-    state->Gold += gold;
-    killer->SetMoney(state->Gold * MobaCopperPerGold);
-    killer->GetSession()->SendNotification("+%u gold (dernier coup). Total: %u gold.", gold, state->Gold);
+    AddGold(killer, *state, gold);
+    Announce(killer, Trinity::StringFormat("+{} gold (dernier coup). Total: {} gold.", gold, state->Gold));
+}
+
+uint32 GetChampionKillXp(MobaPlayerState const& victim)
+{
+    return MobaChampionKillBaseXp + victim.Level * MobaChampionKillXpPerVictimLevel;
+}
+
+// Bounty bonus the killer collects for ending a fed enemy's kill streak.
+uint32 GetShutdownGold(MobaPlayerState const& victim)
+{
+    return std::min(victim.KillStreak * MobaChampionShutdownGoldPerStreak, MobaChampionShutdownGoldMax);
 }
 
 // Shared XP: every enemy-team champion within range of the dying minion earns the full XP.
@@ -288,6 +315,10 @@ void InitializePlayerMatchProgress(Player* player)
     state->AppliedStats = {};
     state->MatchElapsedMs = 0;
     state->PassiveGoldTimerMs = 0;
+    state->RespawnAtMs = 0;
+    state->KillStreak = 0;
+    state->LastDamagerKey = 0;
+    state->LastDamageMs = 0;
 
     EnsureChampionLevel(player, *state);
     RecalculateStats(*state);
@@ -325,6 +356,90 @@ void OnMinionKilled(Unit* killer, Creature* minion)
             RewardMinionGold(killerPlayer, minion);
 
     RewardMinionXp(minion);
+}
+
+// PvP kill reward (LoL-style). The killer takes the full bounty (base + shutdown for ending the
+// victim's streak) and the kill XP; nearby allied champions split an assist reward. Scoreboard
+// kills/deaths/assists are handled separately by Battleground::HandleKillPlayer.
+void OnChampionKilled(Player* killer, Player* victim)
+{
+    MobaPlayerState* victimState = GetPlayerState(victim);
+    if (!victimState || !victimState->ProgressInitialized || !victim->InBattleground())
+        return;
+
+    uint32 const beneficiaryTeam = GetEnemyTeamId(victim->GetBGTeam());
+    if (!IsTeamId(beneficiaryTeam))
+        return;
+
+    Battleground* bg = victim->GetBattleground();
+    if (!bg)
+        return;
+
+    // Size the shutdown on the streak the victim had, then end it.
+    uint32 const shutdown = GetShutdownGold(*victimState);
+    victimState->KillStreak = 0;
+
+    uint32 const killXp = GetChampionKillXp(*victimState);
+
+    // The killer (an enemy champion) takes the full bounty and grows a kill streak.
+    if (killer && killer != victim && killer->GetBGTeam() == beneficiaryTeam)
+    {
+        if (MobaPlayerState* killerState = GetPlayerState(killer); killerState && killerState->ProgressInitialized)
+        {
+            uint32 const bounty = MobaChampionKillGold + shutdown;
+            AddGold(killer, *killerState, bounty);
+            ++killerState->KillStreak;
+            GrantPlayerXp(killer, *killerState, killXp, false);
+            Announce(killer, Trinity::StringFormat("Kill ! +{} gold, +{} xp. Total: {} gold.", bounty, killXp, killerState->Gold));
+        }
+    }
+
+    // Nearby allied champions (the killer's team) share assist gold and the kill XP.
+    for (auto const& itr : bg->GetPlayers())
+    {
+        Player* ally = ObjectAccessor::GetPlayer(*victim, itr.first);
+        if (!ally || ally == killer || !ally->IsAlive() || ally->GetBGTeam() != beneficiaryTeam)
+            continue;
+
+        if (!victim->IsWithinDistInMap(ally, MobaChampionRewardRange))
+            continue;
+
+        MobaPlayerState* allyState = GetPlayerState(ally);
+        if (!allyState || !allyState->ProgressInitialized)
+            continue;
+
+        AddGold(ally, *allyState, MobaChampionAssistGold);
+        GrantPlayerXp(ally, *allyState, killXp, false);
+        Announce(ally, Trinity::StringFormat("Assist ! +{} gold, +{} xp. Total: {} gold.", MobaChampionAssistGold, killXp, allyState->Gold));
+    }
+
+    // Death is now credited: clear the recent-damager so the respawn poll does not re-award it.
+    victimState->LastDamagerKey = 0;
+    victimState->LastDamageMs = 0;
+}
+
+// Record the last enemy champion to damage a champion, so a kill can still be credited if a minion
+// or tower lands the finishing blow (LoL-style). Called from the UnitScript OnDamage hook.
+void NoteChampionDamage(Unit* attacker, Unit* victim)
+{
+    Player* victimPlayer = victim ? victim->ToPlayer() : nullptr;
+    if (!victimPlayer || !victimPlayer->InBattleground())
+        return;
+
+    MobaPlayerState* victimState = GetPlayerState(victimPlayer);
+    if (!victimState || !victimState->ProgressInitialized)
+        return;
+
+    Player* attackerPlayer = attacker ? attacker->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+    if (!attackerPlayer || attackerPlayer == victimPlayer || attackerPlayer->GetBGTeam() == victimPlayer->GetBGTeam())
+        return;   // only enemy champion damage counts
+
+    MobaPlayerState const* attackerState = GetPlayerState(attackerPlayer);
+    if (!attackerState || !attackerState->ProgressInitialized)
+        return;
+
+    victimState->LastDamagerKey = attackerPlayer->GetGUID().GetCounter();
+    victimState->LastDamageMs = GameTime::GetGameTimeMS();
 }
 
 uint32 GetPlayerMobaLevel(Player const* player)
@@ -371,7 +486,7 @@ void UpdatePassiveGold(uint32 diff)
         uint32 const gained = intervals * MobaPassiveGoldAmount;
         state.Gold += gained;
         player->SetMoney(state.Gold * MobaCopperPerGold);
-        player->GetSession()->SendNotification("+%u gold (passif). Total: %u gold.", gained, state.Gold);
+        Announce(player, Trinity::StringFormat("+{} gold (passif). Total: {} gold.", gained, state.Gold));
     }
 }
 
@@ -394,6 +509,12 @@ void RespawnAtBase(Player* player)
     player->SetFullHealth();
     player->SetPower(player->GetPowerType(), player->GetMaxPower(player->GetPowerType()));
     TeleportToBase(player);
+
+    if (MobaPlayerState* state = GetPlayerState(player))
+    {
+        state->LastDamagerKey = 0;   // a fresh life starts with no pending kill credit
+        state->LastDamageMs = 0;
+    }
 }
 }
 
@@ -424,9 +545,15 @@ void UpdateRespawns(uint32 /*diff*/)
         // Dead: start the timer on the first detection.
         if (state.RespawnAtMs == 0)
         {
+            // If the finishing blow came from a minion/tower (no player credited via HandleKillPlayer)
+            // but an enemy champion damaged us recently, that champion still gets the kill (LoL-style).
+            if (state.LastDamagerKey && now - state.LastDamageMs <= MobaKillCreditWindowMs)
+                if (Player* damager = FindOnlinePlayer(state.LastDamagerKey))
+                    OnChampionKilled(damager, player);
+
             uint32 const respawnMs = MobaRespawnBaseMs + state.Level * MobaRespawnPerLevelMs;
             state.RespawnAtMs = now + respawnMs;
-            player->GetSession()->SendNotification("Mort. Reapparition dans %u s.", respawnMs / 1000);
+            Announce(player, Trinity::StringFormat("Mort. Reapparition dans {} s.", respawnMs / 1000));
             continue;
         }
 

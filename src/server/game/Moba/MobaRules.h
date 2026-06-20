@@ -79,6 +79,17 @@ inline constexpr uint32 MobaPassiveGoldAmount = 20;         // gold per interval
 inline constexpr uint32 MobaRespawnBaseMs = 5000;
 inline constexpr uint32 MobaRespawnPerLevelMs = 2500;
 
+// Champion kill rewards (LoL-style bounty + shutdown). The killer takes the full bounty; nearby
+// allied champions split an assist reward. A kill streak grows the bounty an enemy collects.
+inline constexpr uint32 MobaChampionKillGold = 300;                 // base bounty paid to the killer
+inline constexpr uint32 MobaChampionShutdownGoldPerStreak = 35;     // extra bounty per point of the victim's streak
+inline constexpr uint32 MobaChampionShutdownGoldMax = 350;          // cap on the shutdown bonus
+inline constexpr uint32 MobaChampionKillBaseXp = 90;                // base XP for a kill
+inline constexpr uint32 MobaChampionKillXpPerVictimLevel = 12;      // + XP per MOBA level of the victim
+inline constexpr uint32 MobaChampionAssistGold = 150;               // gold per nearby allied assister
+inline constexpr float  MobaChampionRewardRange = 60.0f;            // allies within this range of the kill share it
+inline constexpr uint32 MobaKillCreditWindowMs = 10000;             // recent enemy damage still earns the kill if a minion/tower lands the blow
+
 inline constexpr uint8 MobaNexusLevel = 1;            // low level so any champion lands hits reliably
 inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a real objective, not instant
 

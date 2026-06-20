@@ -18,6 +18,7 @@ public:
     void StartingEventCloseDoors() override;
     void StartingEventOpenDoors() override;
     void HandleKillUnit(Creature* creature, Player* killer) override;
+    void HandleKillPlayer(Player* victim, Player* killer) override;
     bool SetupBattleground() override;
     void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
 
