@@ -4,6 +4,7 @@
 
 #include "MobaArchetypes.h"
 #include "MobaProgression.h"
+#include "MobaSorcier.h"
 
 #include "Item.h"
 #include "Log.h"
@@ -80,9 +81,9 @@ Archetype const Archetypes[] =
         "Sorcier - mage d'entropie (Instabilite)",
         "Archetype Sorcier applique.",
         POWER_RAGE,                               // rage bar repurposed as the Instability gauge
-        // Q = custom Decharge instable (instability-scaled nuke); rest are placeholder WoW spells for now.
-        { SpellMobaEntropyBolt, 172, 348, 5782, 980, 227, 0, 0 },
-        { 1, 2, 3, 5, 4, 0, 0, 0 },
+        // Custom entropy kit: Q nuke, W AoE, E blink, R gauge-dump, two display passives, staff proficiency.
+        { Sorcier::SpellEntropyBolt, Sorcier::SpellEntropyRift, Sorcier::SpellVoidStep, Sorcier::SpellCataclysm, Sorcier::SpellInstabilityPassive, Sorcier::SpellEntropyPassive, 227, 0 },
+        { 1, 2, 3, 6, 1, 1, 0, 0 },
         { 20978, 0, 0 },                          // Apprentice's Staff (req level 1)
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
         0

@@ -20,7 +20,8 @@ void AddSC_moba_lobby();
 void AddSC_moba_minion();
 void AddSC_moba_nexus();
 void AddSC_moba_solo_match();
-void AddSC_moba_spells();
+void AddSC_moba_briseur_spells();
+void AddSC_moba_sorcier_spells();
 void AddSC_moba_tower();
 
 // The name of this function should match:
@@ -31,6 +32,7 @@ void AddCustomScripts()
     AddSC_moba_minion();
     AddSC_moba_nexus();
     AddSC_moba_solo_match();
-    AddSC_moba_spells();
+    AddSC_moba_briseur_spells();
+    AddSC_moba_sorcier_spells();
     AddSC_moba_tower();
 }

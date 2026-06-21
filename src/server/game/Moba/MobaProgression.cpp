@@ -5,6 +5,7 @@
 #include "MobaProgression.h"
 #include "MobaArchetypes.h"
 #include "MobaMapConfig.h"
+#include "MobaSorcier.h"
 
 #include "Battleground.h"
 #include "BattlegroundScore.h"
@@ -375,6 +376,7 @@ void RemovePlayerProgress(Player* player)
         return;
 
     RemoveAppliedStateStats(player, itr->second);
+    Sorcier::ClearPlayer(player);   // drop any archetype runtime state too
     PlayerStates.erase(itr);
 }
 
@@ -593,7 +595,9 @@ void RespawnAtBase(Player* player)
     player->ResurrectPlayer(1.0f);
     player->SpawnCorpseBones();
     player->SetFullHealth();
-    player->SetPower(player->GetPowerType(), player->GetMaxPower(player->GetPowerType()));
+    // Rage-style resources (e.g. the Sorcier Instability gauge) start a fresh life empty, not full.
+    Powers const power = player->GetPowerType();
+    player->SetPower(power, power == POWER_RAGE ? 0 : player->GetMaxPower(power));
     TeleportToBase(player);
 
     if (MobaPlayerState* state = GetPlayerState(player))
@@ -659,84 +663,6 @@ void UpdateRespawns(uint32 /*diff*/)
 
         state.RespawnAtMs = 0;
         RespawnAtBase(player);
-    }
-}
-
-// Sorcier "Entropy": the instability gauge lives on the rage power bar (0..MobaInstabilityMax).
-void AddInstability(Player* player, uint32 amount)
-{
-    if (!player)
-        return;
-
-    uint32 const cur = player->GetPower(POWER_RAGE);
-    player->SetPower(POWER_RAGE, std::min<uint32>(MobaInstabilityMax, cur + amount));
-
-    // Hold the gauge for a grace window so active casting actually accumulates (and toward overload).
-    if (MobaPlayerState* state = GetPlayerState(player))
-        state->InstabilityGraceMs = MobaInstabilityDecayGraceMs;
-}
-
-uint32 GetInstability(Player const* player)
-{
-    return player ? player->GetPower(POWER_RAGE) : 0;
-}
-
-float GetInstabilityDamageMultiplier(Player const* player)
-{
-    if (!player)
-        return 1.0f;
-
-    float const ratio = float(player->GetPower(POWER_RAGE)) / float(MobaInstabilityMax);
-    return 1.0f + ratio * MobaInstabilityMaxDamageBonus;
-}
-
-// Decay the gauge over time, and overload (self-damage + purge) when it is held at the cap.
-void UpdateInstability(uint32 diff)
-{
-    for (auto& entry : PlayerStates)
-    {
-        MobaPlayerState& state = entry.second;
-        if (!state.ProgressInitialized || state.ArchetypeIndex != SorcierArchetypeIndex)
-            continue;
-
-        Player* player = FindOnlinePlayer(entry.first);
-        if (!player || !player->InBattleground() || !player->IsAlive())
-            continue;
-
-        uint32 power = player->GetPower(POWER_RAGE);
-
-        if (power >= MobaInstabilityMax)
-        {
-            uint32 const backlash = CalculatePct(player->GetMaxHealth(), MobaInstabilityBacklashPctHealth);
-            player->SetPower(POWER_RAGE, 0);
-            state.InstabilityCarryMs = 0;
-            Announce(player, Trinity::StringFormat("Surcharge ! L'instabilite explose : {} degats.", backlash));
-            // True self-damage: the overload bypasses armor/resistances so it matches the announced value.
-            Unit::DealDamage(player, player, backlash, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
-            continue;
-        }
-
-        // Grace window after a cast: hold the gauge so spamming ramps it up instead of draining.
-        if (state.InstabilityGraceMs > 0)
-        {
-            state.InstabilityGraceMs = state.InstabilityGraceMs > diff ? state.InstabilityGraceMs - diff : 0;
-            state.InstabilityCarryMs = 0;
-            continue;
-        }
-
-        if (power == 0)
-        {
-            state.InstabilityCarryMs = 0;
-            continue;
-        }
-
-        state.InstabilityCarryMs += diff;
-        while (state.InstabilityCarryMs >= 100 && power > 0)
-        {
-            state.InstabilityCarryMs -= 100;
-            power = power > MobaInstabilityDecayPer100Ms ? power - MobaInstabilityDecayPer100Ms : 0;
-        }
-        player->SetPower(POWER_RAGE, power);
     }
 }
 }

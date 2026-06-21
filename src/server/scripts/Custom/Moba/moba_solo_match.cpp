@@ -15,6 +15,7 @@
 #include "Log.h"
 #include "MobaMapConfig.h"
 #include "MobaQueue.h"
+#include "MobaSorcier.h"
 #include "Player.h"
 #include "Random.h"
 #include "ScriptMgr.h"
@@ -316,7 +317,7 @@ public:
     {
         Moba::UpdatePassiveGold(diff);
         Moba::UpdateRespawns(diff);
-        Moba::UpdateInstability(diff);
+        Moba::Sorcier::Update(diff);
     }
 };
 

@@ -52,6 +52,20 @@ Build the actual match loop before adding many classes.
    - Start with one polished archetype before expanding all classes.
    - Keep the kit limited: roughly 4 active spells plus 1 to 3 passives.
 
+## Archetype Code Layout
+
+Each archetype with a unique mechanic gets its OWN module (constants, custom spell IDs, the mechanic
+logic, and its per-player runtime state). Do NOT put archetype-specific constants/logic in the generic
+files (`MobaRules.h`, `MobaProgression`). Reference example: `src/server/game/Moba/MobaSorcier.{h,cpp}`
+(the "Entropy" mage and its Instability gauge, in namespace `Moba::Sorcier`). The generic systems stay
+generic: `MobaRules.h` = shared constants/helpers, `MobaProgression` = common level/xp/gold/stat layer.
+Shared per-archetype stat curves (health/AD/AP/armor/MR/attack-speed base+growth) live as data in
+`MobaArchetypes` (`ArchetypeStatCurve`), computed on the LoL increasing-growth curve.
+
+Spell SCRIPTS are also split per archetype: `src/server/scripts/Custom/Moba/moba_<archetype>_spells.cpp`
+(e.g. `moba_sorcier_spells.cpp`, `moba_briseur_spells.cpp`), each with its own `AddSC_moba_<archetype>_spells()`
+registered in `custom_script_loader.cpp`. Do not put one archetype's spells in another's (or in a shared file).
+
 ## Archetype Design Rules
 
 Each archetype should define:

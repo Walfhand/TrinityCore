@@ -107,19 +107,6 @@ inline constexpr uint32 MobaTowerShotSpell = 5176;         // visual bolt for th
 inline constexpr uint32 MobaNexusTowerLane = 9;            // lane id used for the nexus-guarding towers
 inline constexpr uint32 MobaStructureShieldSpell = 642;    // Divine Shield: golden bubble on invulnerable structures
 
-// Sorcier "Entropy" archetype: an Instability gauge (shown on the rage bar) builds on every cast,
-// amplifies spell damage, and overloads (self-damage) at the cap. Cast freely, manage the risk.
-inline constexpr uint32 SorcierArchetypeIndex = 5;             // index into Archetypes[]
-inline constexpr uint32 MobaInstabilityMax = 1000;            // internal rage units (shown 0-100)
-inline constexpr uint32 MobaInstabilityPerCast = 300;        // +30 shown per spell cast (~4 casts -> overload)
-inline constexpr uint32 MobaInstabilityDecayGraceMs = 4000;  // gauge holds (no decay) for 4s after a cast
-inline constexpr uint32 MobaInstabilityDecayPer100Ms = 7;    // once decaying, ~70/s shown, drains in ~14s
-inline constexpr float  MobaInstabilityMaxDamageBonus = 0.80f; // +80% spell damage at a full gauge
-inline constexpr uint32 MobaInstabilityBacklashPctHealth = 20; // overload self-damage (% of max health) - real deterrent
-
-// Custom MOBA spell IDs (900xxx range). Sorcier kit.
-inline constexpr uint32 SpellMobaEntropyBolt = 900200;       // primary: instability-scaled shadow nuke
-
 inline bool IsTeamId(uint32 teamId)
 {
     return teamId == BlueTeamId || teamId == RedTeamId;

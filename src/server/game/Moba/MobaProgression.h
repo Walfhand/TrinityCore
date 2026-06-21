@@ -48,8 +48,6 @@ struct MobaPlayerState
     uint32 KillStreak = 0;           // consecutive champion kills without dying (sizes the shutdown bounty)
     uint32 LastDamagerKey = 0;       // last enemy champion that damaged this player (GUID counter); 0 = none
     uint32 LastDamageMs = 0;         // GameTimeMS of that damage, for the kill-credit window
-    uint32 InstabilityCarryMs = 0;   // Sorcier: accumulator for the instability decay tick
-    uint32 InstabilityGraceMs = 0;   // Sorcier: no-decay grace remaining after the last cast
     bool ProgressInitialized = false;
 };
 
@@ -68,11 +66,6 @@ void OnChampionKilled(Player* killer, Player* victim);  // PvP kill: bounty to k
 void NoteChampionDamage(Unit* attacker, Unit* victim); // record the last enemy champion that hit a champion (kill credit)
 uint32 GetPlayerMobaLevel(Player const* player);
 
-// Sorcier "Entropy" instability gauge (stored on the rage power bar) ----------------------
-void AddInstability(Player* player, uint32 amount);                 // raise the gauge on a cast (clamped)
-uint32 GetInstability(Player const* player);                        // current gauge value (0..MobaInstabilityMax)
-float GetInstabilityDamageMultiplier(Player const* player);         // 1.0 .. (1 + MobaInstabilityMaxDamageBonus)
-
 // True for a dead champion in an active match: it must never auto-resurrect or teleport to a
 // graveyard. It releases into a free-roaming spectator ghost; only the match timer respawns it.
 bool BlocksGraveyardResurrect(Player const* player);
@@ -80,7 +73,6 @@ bool BlocksGraveyardResurrect(Player const* player);
 // Periodic ticks (driven once per world update by a thin script hook).
 void UpdatePassiveGold(uint32 diff);
 void UpdateRespawns(uint32 diff);    // dead champions respawn at base after a level-scaled timer
-void UpdateInstability(uint32 diff); // Sorcier: decay the instability gauge + overload backlash at the cap
 }
 
 #endif
