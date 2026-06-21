@@ -442,13 +442,13 @@ void ReapplyPlayerMatchState(Player* player)
         return;
 
     // A reconnect gives a fresh Player object: the WoW level/XP/money persist in the DB, but the
-    // in-memory stat bonuses do not, so re-apply them and re-push the bar/money to the client.
+    // in-memory archetype resource/spells/stat bonuses do not, so re-apply them and re-push the
+    // bar/money to the client.
     state->AppliedStats = {};
     EnsureChampionLevel(player, *state);
-    MaxArchetypeSkills(player, state->ArchetypeIndex);
+    ReapplyArchetypeRuntime(player, state->ArchetypeIndex, state->Level);
     RecalculateStats(*state);
     ApplyStateStats(player, *state);
-    UpdateArchetypeSpells(player, state->ArchetypeIndex, state->Level, false);
     SyncProgressionToClient(player, *state);
 }
 

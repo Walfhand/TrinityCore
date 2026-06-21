@@ -83,6 +83,10 @@ bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* targ
 // ignores cloned spell-row LOS skip flags inside MOBA matches.
 bool BlocksSpellWithoutLineOfSight(Unit* caster, SpellInfo const* spellInfo, Unit* target);
 
+// Handles Sorcier's MOBA ranged basic attack from the normal right-click attack loop. Returns true
+// when the vanilla melee swing should be suppressed, even if the ranged attack is waiting on timer.
+bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg);
+
 // Periodic ticks (driven once per world update by a thin script hook).
 void UpdatePassiveGold(uint32 diff);
 void UpdateRespawns(uint32 diff);    // dead champions respawn at base after a level-scaled timer

@@ -97,6 +97,7 @@ inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a 
 inline constexpr uint8 MobaTowerLevel = 1;
 inline constexpr uint32 MobaTowerHealth = 4000;            // tanky structure
 inline constexpr float MobaTowerRange = 18.0f;             // attack range (was 30, felt too far)
+inline constexpr float MobaSorcierAutoAttackRange = MobaTowerRange - 1.5f; // stay just under turret aggro
 inline constexpr uint32 MobaTowerAttackIntervalMs = 1000;
 inline constexpr uint32 MobaTowerDamageVsMinion = 350;     // shreds minions
 inline constexpr uint32 MobaTowerDamageVsChampion = 120;   // base damage; ramps on consecutive shots

@@ -196,6 +196,26 @@ void ApplyArchetype(Player* player, Archetype const& archetype)
     player->GetSession()->SendNotification("%s", archetype.Message);
 }
 
+void ReapplyArchetypeRuntime(Player* player, uint32 archetypeIndex, uint32 mobaLevel)
+{
+    if (!player || archetypeIndex >= ArchetypeCount)
+        return;
+
+    Archetype const& archetype = Archetypes[archetypeIndex];
+
+    // Login rebuilds a Player from the real WoW class row, so the client can briefly regain the
+    // native resource/spellbook. Re-assert only runtime archetype state; do not touch equipment.
+    player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+    player->SetFreeTalentPoints(0);
+    WipeSpellbook(player);
+    UpdateArchetypeSpells(player, archetypeIndex, mobaLevel, false);
+    MaxArchetypeSkills(player, archetypeIndex);
+    ApplyArchetypePower(player, archetype.Power);
+
+    if (archetype.OnApplyCast)
+        player->CastSpell(player, archetype.OnApplyCast, true);
+}
+
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify)
 {
     if (!player || archetypeIndex >= ArchetypeCount)

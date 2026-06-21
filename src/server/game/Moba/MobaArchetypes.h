@@ -55,6 +55,7 @@ struct ArchetypeStatCurve
 ArchetypeStatCurve const& GetArchetypeStatCurve(uint32 archetypeIndex);
 
 void ApplyArchetype(Player* player, Archetype const& archetype);
+void ReapplyArchetypeRuntime(Player* player, uint32 archetypeIndex, uint32 mobaLevel);
 void MaxArchetypeSkills(Player* player, uint32 archetypeIndex);
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);
 void ResetForMatch(Player* player);

@@ -314,6 +314,7 @@ public:
         if (player->InBattleground())
         {
             Moba::MarkPlayerMatchInProgress(player);
+            Moba::ReapplyPlayerMatchState(player);
             return;
         }
 
