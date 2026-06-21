@@ -100,6 +100,11 @@ When adding a fully custom spell:
 - Register scripts in the custom script loader.
 - Add/update client MPQ patches if the spell must appear correctly in the spellbook/action bars/tooltips.
 - Keep generated client MPQs under `client-patches/` so they can be tracked.
+- Keep the server spell IDs, SQL rows, C++ constants, and client `Spell.dbc`
+  rows aligned. For the current process, see `client-patches/README.md`.
+- Reusable tooling + the full documented pipeline (Spell.dbc field map, StormLib
+  MPQ read/write via `storm.py`, the clone-a-reference-row recipe) lives in
+  `tools/client-patch/`. Use it instead of re-deriving the DBC/MPQ format.
 
 ## Stats And Scaling
 

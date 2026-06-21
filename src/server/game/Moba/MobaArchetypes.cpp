@@ -77,11 +77,11 @@ Archetype const Archetypes[] =
         0
     },
     {
-        "Sorcier - DoT distance (Mana)",
+        "Sorcier - mage d'entropie (Instabilite)",
         "Archetype Sorcier applique.",
-        POWER_MANA,
-        // Shadow Bolt, Corruption, Immolate, Fear, Curse of Agony + Staves proficiency
-        { 686, 172, 348, 5782, 980, 227, 0, 0 },
+        POWER_RAGE,                               // rage bar repurposed as the Instability gauge
+        // Q = custom Decharge instable (instability-scaled nuke); rest are placeholder WoW spells for now.
+        { SpellMobaEntropyBolt, 172, 348, 5782, 980, 227, 0, 0 },
         { 1, 2, 3, 5, 4, 0, 0, 0 },
         { 20978, 0, 0 },                          // Apprentice's Staff (req level 1)
         { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
@@ -96,18 +96,18 @@ std::size_t const ArchetypeCount = sizeof(Archetypes) / sizeof(Archetypes[0]);
 // Squishies (mage/marksman/assassin) are frailer with lower resistances; tank/bruiser get more.
 ArchetypeStatCurve const ArchetypeStatCurves[] =
 {
-    // Briseur (bruiser)   HP                Armor          MagicResist
-    {                      640.f, 100.f,     34.f, 4.0f,    32.f, 1.5f  },
+    // Briseur (bruiser)   HP                Armor          MagicRes      AttackPower    SpellPower   AtkTime
+    {                      640.f, 100.f,     34.f, 4.0f,    32.f, 1.5f,   130.f, 16.f,    8.f, 2.f,    1800 },
     // Arcaniste (burst mage)
-    {                      560.f,  90.f,     20.f, 3.5f,    30.f, 1.3f  },
+    {                      560.f,  90.f,     20.f, 3.5f,    30.f, 1.3f,    55.f,  6.f,   30.f, 14.f,   2000 },
     // Gardien (tank)
-    {                      680.f, 115.f,     38.f, 5.0f,    32.f, 2.05f },
+    {                      680.f, 115.f,     38.f, 5.0f,    32.f, 2.05f,   85.f,  9.f,   12.f, 4.f,    2000 },
     // Assassin
-    {                      600.f,  95.f,     28.f, 3.8f,    30.f, 1.3f  },
+    {                      600.f,  95.f,     28.f, 3.8f,    30.f, 1.3f,   140.f, 18.f,   10.f, 3.f,    1600 },
     // Rodeur (marksman)
-    {                      580.f,  90.f,     26.f, 4.0f,    30.f, 1.3f  },
+    {                      580.f,  90.f,     26.f, 4.0f,    30.f, 1.3f,   175.f, 22.f,    6.f, 2.f,    1400 },
     // Sorcier (mage)
-    {                      560.f,  88.f,     20.f, 3.5f,    30.f, 1.3f  },
+    {                      560.f,  88.f,     20.f, 3.5f,    30.f, 1.3f,    50.f,  5.f,   28.f, 13.f,   2000 },
 };
 
 ArchetypeStatCurve const& GetArchetypeStatCurve(uint32 archetypeIndex)

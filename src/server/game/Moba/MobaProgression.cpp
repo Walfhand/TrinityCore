@@ -15,6 +15,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "StringFormat.h"
+#include "Util.h"
 #include "WorldSession.h"
 
 #include <algorithm>
@@ -68,6 +69,8 @@ void RecalculateStats(MobaPlayerState& state)
     state.Stats.Health      = uint32(ComputeCurveStat(curve.HealthBase, curve.HealthGrowth, state.Level) + 0.5f);
     state.Stats.Armor       = uint32(ComputeCurveStat(curve.ArmorBase, curve.ArmorGrowth, state.Level) + 0.5f);
     state.Stats.MagicResist = uint32(ComputeCurveStat(curve.MagicResistBase, curve.MagicResistGrowth, state.Level) + 0.5f);
+    state.Stats.AttackPower = uint32(ComputeCurveStat(curve.AttackPowerBase, curve.AttackPowerGrowth, state.Level) + 0.5f);
+    state.Stats.SpellPower  = uint32(ComputeCurveStat(curve.SpellPowerBase, curve.SpellPowerGrowth, state.Level) + 0.5f);
 }
 
 // Apply the controlled absolute targets by bridging over the WoW base: the bonus we add equals
@@ -87,14 +90,18 @@ void ApplyStateStats(Player* player, MobaPlayerState& state)
         state.AppliedStats.Health = uint32(bonus);
     }
 
-    // Armor.
+    // Armor. Applied via UNIT_MOD_ARMOR (which UpdateArmor includes) so it survives stat recomputes and
+    // can push armor to the exact target even BELOW the natural WoW value (gear + agility).
     {
-        int32 const natural = int32(player->GetArmor()) - int32(state.AppliedStats.Armor);
-        int32 const bonus   = std::max<int32>(0, int32(state.Stats.Armor) - natural);
-        int32 const delta   = bonus - int32(state.AppliedStats.Armor);
+        int32 const natural = int32(player->GetArmor()) - state.AppliedArmorBonus;
+        int32 const bonus   = int32(state.Stats.Armor) - natural;   // signed
+        int32 const delta   = bonus - state.AppliedArmorBonus;
         if (delta)
-            player->SetArmor(std::max<int32>(0, player->GetArmor() + delta));
-        state.AppliedStats.Armor = uint32(bonus);
+        {
+            player->HandleStatFlatModifier(UNIT_MOD_ARMOR, TOTAL_VALUE, float(delta > 0 ? delta : -delta), delta > 0);
+            player->UpdateArmor();
+        }
+        state.AppliedArmorBonus = bonus;
     }
 
     // Magic resistance (uniform across the magic schools).
@@ -107,6 +114,40 @@ void ApplyStateStats(Player* player, MobaPlayerState& state)
                 player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) + delta);
         state.AppliedStats.MagicResist = uint32(bonus);
     }
+
+    // Attack power (= LoL attack damage; scales auto-attacks and physical abilities). Unlike health/
+    // armor/MR this bonus PERSISTS through GiveLevel, so it is tracked separately and never zeroed.
+    {
+        int32 const natural = int32(player->GetTotalAttackPowerValue(BASE_ATTACK)) - int32(state.AppliedAttackPower);
+        int32 const bonus   = std::max<int32>(0, int32(state.Stats.AttackPower) - natural);
+        int32 const delta   = bonus - int32(state.AppliedAttackPower);
+        if (delta)
+        {
+            float const magnitude = float(delta > 0 ? delta : -delta);
+            player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, magnitude, delta > 0);
+            player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, magnitude, delta > 0);
+            player->UpdateAttackPowerAndDamage(false);
+            player->UpdateAttackPowerAndDamage(true);
+        }
+        state.AppliedAttackPower = uint32(bonus);
+    }
+
+    // Spell power (= LoL ability power; scales magic abilities). Also persists through GiveLevel.
+    {
+        int32 const natural = int32(player->GetBaseSpellPowerBonus()) - int32(state.AppliedSpellPower);
+        int32 const bonus   = std::max<int32>(0, int32(state.Stats.SpellPower) - natural);
+        int32 const delta   = bonus - int32(state.AppliedSpellPower);
+        if (delta)
+            player->ApplySpellPowerBonus(delta > 0 ? delta : -delta, delta > 0);
+        state.AppliedSpellPower = uint32(bonus);
+    }
+
+    // Attack speed: set the auto-attack interval directly from the archetype curve (absolute).
+    {
+        ArchetypeStatCurve const& curve = GetArchetypeStatCurve(state.ArchetypeIndex);
+        player->SetAttackTime(BASE_ATTACK, curve.AttackTimeMs);
+        player->SetAttackTime(RANGED_ATTACK, curve.AttackTimeMs);
+    }
 }
 
 void RemoveAppliedStateStats(Player* player, MobaPlayerState& state)
@@ -118,14 +159,32 @@ void RemoveAppliedStateStats(Player* player, MobaPlayerState& state)
         player->SetHealth(std::min<uint32>(player->GetMaxHealth(), player->GetHealth()));
     }
 
-    if (state.AppliedStats.Armor)
-        player->SetArmor(std::max<int32>(0, player->GetArmor() - int32(state.AppliedStats.Armor)));
+    if (state.AppliedArmorBonus)
+    {
+        int32 const a = state.AppliedArmorBonus;
+        player->HandleStatFlatModifier(UNIT_MOD_ARMOR, TOTAL_VALUE, float(a > 0 ? a : -a), a < 0);
+        player->UpdateArmor();
+    }
 
     if (state.AppliedStats.MagicResist)
         for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
             player->SetResistance(SpellSchools(school), player->GetResistance(SpellSchools(school)) - int32(state.AppliedStats.MagicResist));
 
+    if (state.AppliedAttackPower)
+    {
+        player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER, TOTAL_VALUE, float(state.AppliedAttackPower), false);
+        player->HandleStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, TOTAL_VALUE, float(state.AppliedAttackPower), false);
+        player->UpdateAttackPowerAndDamage(false);
+        player->UpdateAttackPowerAndDamage(true);
+    }
+
+    if (state.AppliedSpellPower)
+        player->ApplySpellPowerBonus(int32(state.AppliedSpellPower), false);
+
     state.AppliedStats = {};
+    state.AppliedAttackPower = 0;
+    state.AppliedSpellPower = 0;
+    state.AppliedArmorBonus = 0;
 }
 
 void NotifyState(Player* player, MobaPlayerState const& state)
@@ -600,6 +659,84 @@ void UpdateRespawns(uint32 /*diff*/)
 
         state.RespawnAtMs = 0;
         RespawnAtBase(player);
+    }
+}
+
+// Sorcier "Entropy": the instability gauge lives on the rage power bar (0..MobaInstabilityMax).
+void AddInstability(Player* player, uint32 amount)
+{
+    if (!player)
+        return;
+
+    uint32 const cur = player->GetPower(POWER_RAGE);
+    player->SetPower(POWER_RAGE, std::min<uint32>(MobaInstabilityMax, cur + amount));
+
+    // Hold the gauge for a grace window so active casting actually accumulates (and toward overload).
+    if (MobaPlayerState* state = GetPlayerState(player))
+        state->InstabilityGraceMs = MobaInstabilityDecayGraceMs;
+}
+
+uint32 GetInstability(Player const* player)
+{
+    return player ? player->GetPower(POWER_RAGE) : 0;
+}
+
+float GetInstabilityDamageMultiplier(Player const* player)
+{
+    if (!player)
+        return 1.0f;
+
+    float const ratio = float(player->GetPower(POWER_RAGE)) / float(MobaInstabilityMax);
+    return 1.0f + ratio * MobaInstabilityMaxDamageBonus;
+}
+
+// Decay the gauge over time, and overload (self-damage + purge) when it is held at the cap.
+void UpdateInstability(uint32 diff)
+{
+    for (auto& entry : PlayerStates)
+    {
+        MobaPlayerState& state = entry.second;
+        if (!state.ProgressInitialized || state.ArchetypeIndex != SorcierArchetypeIndex)
+            continue;
+
+        Player* player = FindOnlinePlayer(entry.first);
+        if (!player || !player->InBattleground() || !player->IsAlive())
+            continue;
+
+        uint32 power = player->GetPower(POWER_RAGE);
+
+        if (power >= MobaInstabilityMax)
+        {
+            uint32 const backlash = CalculatePct(player->GetMaxHealth(), MobaInstabilityBacklashPctHealth);
+            player->SetPower(POWER_RAGE, 0);
+            state.InstabilityCarryMs = 0;
+            Announce(player, Trinity::StringFormat("Surcharge ! L'instabilite explose : {} degats.", backlash));
+            // True self-damage: the overload bypasses armor/resistances so it matches the announced value.
+            Unit::DealDamage(player, player, backlash, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
+            continue;
+        }
+
+        // Grace window after a cast: hold the gauge so spamming ramps it up instead of draining.
+        if (state.InstabilityGraceMs > 0)
+        {
+            state.InstabilityGraceMs = state.InstabilityGraceMs > diff ? state.InstabilityGraceMs - diff : 0;
+            state.InstabilityCarryMs = 0;
+            continue;
+        }
+
+        if (power == 0)
+        {
+            state.InstabilityCarryMs = 0;
+            continue;
+        }
+
+        state.InstabilityCarryMs += diff;
+        while (state.InstabilityCarryMs >= 100 && power > 0)
+        {
+            state.InstabilityCarryMs -= 100;
+            power = power > MobaInstabilityDecayPer100Ms ? power - MobaInstabilityDecayPer100Ms : 0;
+        }
+        player->SetPower(POWER_RAGE, power);
     }
 }
 }

@@ -44,9 +44,12 @@ extern std::size_t const ArchetypeCount;
 // so champions are balanced against each other regardless of the hidden WoW class underneath.
 struct ArchetypeStatCurve
 {
-    float HealthBase;       float HealthGrowth;
-    float ArmorBase;        float ArmorGrowth;
-    float MagicResistBase;  float MagicResistGrowth;
+    float HealthBase;        float HealthGrowth;
+    float ArmorBase;         float ArmorGrowth;
+    float MagicResistBase;   float MagicResistGrowth;
+    float AttackPowerBase;   float AttackPowerGrowth;   // drives auto-attacks + physical abilities (LoL AD)
+    float SpellPowerBase;    float SpellPowerGrowth;    // drives magic abilities (LoL AP)
+    uint32 AttackTimeMs;     // auto-attack interval (attack speed), fixed per archetype
 };
 
 ArchetypeStatCurve const& GetArchetypeStatCurve(uint32 archetypeIndex);

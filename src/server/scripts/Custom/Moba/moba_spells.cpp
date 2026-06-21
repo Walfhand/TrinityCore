@@ -79,9 +79,68 @@ public:
         return new spell_moba_rage_guard_SpellScript();
     }
 };
+
+// Sorcier "Decharge instable": shadow nuke whose damage scales with the Instability gauge, and which
+// raises that gauge on cast. LoL-style formula: (base + level scaling + AP ratio) * instability mult.
+uint32 constexpr EntropyBoltBaseDamage = 55;
+uint32 constexpr EntropyBoltDamagePerLevel = 9;
+float constexpr EntropyBoltApRatio = 0.55f;
+std::chrono::milliseconds constexpr EntropyBoltCooldown = std::chrono::milliseconds(3000);
+
+class spell_moba_entropy_bolt : public SpellScriptLoader
+{
+public:
+    spell_moba_entropy_bolt() : SpellScriptLoader("spell_moba_entropy_bolt") { }
+
+    class spell_moba_entropy_bolt_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_moba_entropy_bolt_SpellScript);
+
+        void HandleDamage(SpellEffIndex /*effIndex*/)
+        {
+            Player* caster = GetCaster()->ToPlayer();
+            Unit* target = GetHitUnit();
+            if (!caster || !target)
+                return;
+
+            uint32 const level = Moba::GetPlayerMobaLevel(caster);
+            uint32 spellPower = 0;
+            if (Moba::MobaPlayerState const* state = Moba::GetPlayerState(caster))
+                spellPower = state->Stats.SpellPower;
+
+            float const base = float(EntropyBoltBaseDamage) + float(EntropyBoltDamagePerLevel) * float(level > 0 ? level - 1 : 0);
+            float const apBonus = EntropyBoltApRatio * float(spellPower);
+            float const multiplier = Moba::GetInstabilityDamageMultiplier(caster);
+
+            SetHitDamage(int32((base + apBonus) * multiplier));
+        }
+
+        void HandleAfterCast()
+        {
+            Player* caster = GetCaster()->ToPlayer();
+            if (!caster)
+                return;
+
+            Moba::AddInstability(caster, Moba::MobaInstabilityPerCast);
+            caster->GetSpellHistory()->AddCooldown(Moba::SpellMobaEntropyBolt, 0, EntropyBoltCooldown);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_moba_entropy_bolt_SpellScript::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+            AfterCast += SpellCastFn(spell_moba_entropy_bolt_SpellScript::HandleAfterCast);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_moba_entropy_bolt_SpellScript();
+    }
+};
 }
 
 void AddSC_moba_spells()
 {
     new spell_moba_rage_guard();
+    new spell_moba_entropy_bolt();
 }

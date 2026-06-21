@@ -316,6 +316,7 @@ public:
     {
         Moba::UpdatePassiveGold(diff);
         Moba::UpdateRespawns(diff);
+        Moba::UpdateInstability(diff);
     }
 };
 
