@@ -6,8 +6,10 @@
 #define GAME_MOBA_SORCIER_H
 
 #include "Define.h"
+#include "MobaRules.h"
 
 class Player;
+class Unit;
 
 // Sorcier = the "Entropy" mage. Self-contained archetype module: its constants, custom spell IDs,
 // the Instability gauge mechanic and its per-player runtime live here, not in the generic MOBA
@@ -36,7 +38,10 @@ inline constexpr uint32 SpellEntropyPassive = 900206;        // spellbook displa
 inline constexpr uint32 SpellInstabilityPassive = 900207;    // spellbook display entry explaining the gauge
 inline constexpr uint32 SpellEntropyBasicAttack = 900208;    // spellbook/action-bar command for the ranged basic attack
 inline constexpr uint32 SpellEntropyBasicAttackVisual = 900209; // Arcane Barrage visual-only missile for the basic attack
-inline constexpr uint32 SpellEntropyBasicAttackVisualRef = 44425; // used for projectile speed/reference only
+inline constexpr uint32 SpellEntropyBasicAttackVisualRef = 44425; // Arcane Barrage: source of the missile Speed/visual (server fix + travel delay)
+
+// Ranged basic-attack tuning. Just under turret range so the Sorcier can poke from the edge of aggro.
+inline constexpr float BasicAttackRange = MobaTowerRange - 1.5f;
 
 void AddInstability(Player* player, uint32 amount);          // raise the gauge + refresh the no-decay grace
 uint32 GetInstability(Player const* player);                 // current gauge value (0..InstabilityMax)
@@ -44,6 +49,11 @@ float GetInstabilityDamageMultiplier(Player const* player);  // 1.0 .. (1 + Inst
 void ResetGauge(Player* player);                            // clear the gauge (e.g. on respawn)
 void ClearPlayer(Player const* player);                     // drop runtime state (match cleanup)
 void Update(uint32 diff);                                   // decay + overload backlash, driven per world tick
+
+// Ranged basic attack (the Sorcier auto-attacks at range with the entropy bolt, not a melee staff).
+bool IsBasicAttackSpell(uint32 spellId);                    // the command/visual spells, allowed on structures
+void StartBasicAttack(Player* player, Unit* victim);        // engage: validate range/LOS, begin the attack
+void HandleBasicAttackSwing(Player* player, Unit* victim, uint8& swingErrorMsg); // per-swing loop (from Player::Update)
 }
 
 #endif

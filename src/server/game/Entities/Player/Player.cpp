@@ -72,6 +72,7 @@
 #include "MailPackets.h"
 #include "MapManager.h"
 #include "MiscPackets.h"
+#include "MobaArchetypes.h"
 #include "MobaProgression.h"
 #include "MotionMaster.h"
 #include "MovementPackets.h"

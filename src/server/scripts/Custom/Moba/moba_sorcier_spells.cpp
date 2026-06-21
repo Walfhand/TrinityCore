@@ -142,7 +142,7 @@ public:
             if (!caster || !target || !caster->IsValidAttackTarget(target))
                 return SPELL_FAILED_BAD_TARGETS;
 
-            if (!caster->IsWithinDistInMap(target, Moba::MobaSorcierAutoAttackRange))
+            if (!caster->IsWithinDistInMap(target, Moba::Sorcier::BasicAttackRange))
                 return SPELL_FAILED_OUT_OF_RANGE;
 
             if (!caster->IsWithinLOSInMap(target, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2))
@@ -160,7 +160,7 @@ public:
             if (!caster || !target || !caster->IsValidAttackTarget(target))
                 return;
 
-            Moba::StartChampionRangedAutoAttack(caster, target);
+            Moba::Sorcier::StartBasicAttack(caster, target);
         }
 
         void Register() override

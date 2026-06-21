@@ -136,7 +136,8 @@ exclude structures from their target search in the spell scripts.
 
 ### 13. `src/server/game/Handlers/CombatHandler.cpp` — `HandleAttackSwingOpcode`
 Right-click attack hook: `if (!Moba::StartChampionRangedAutoAttack(_player, enemy)) _player->Attack(enemy, true);`.
-(Also includes `#include "MobaProgression.h"`.)
+(Includes `#include "MobaArchetypes.h"` instead of `MobaProgression.h` — the ranged-auto seam lives in the
+archetype hub, which dispatches to the per-archetype module.)
 
 **Why:** ranged-auto-attack archetypes (Sorcier) must not start a vanilla melee swing on right-click.
 `StartChampionRangedAutoAttack` returns true for those champions (engaging a non-melee attack via
@@ -146,9 +147,13 @@ Right-click attack hook: `if (!Moba::StartChampionRangedAutoAttack(_player, enem
 The melee-swing block also runs when `Moba::UsesChampionRangedAutoAttack(this)` (not only on
 `UNIT_STATE_MELEE_ATTACKING`), and inside it `Moba::HandleChampionRangedAutoAttack(this, victim, m_swingErrorMsg)`
 gets first refusal: when it returns true the vanilla melee swing path is skipped entirely.
+(Adds `#include "MobaArchetypes.h"` next to the existing `MobaProgression.h`.)
 
-**Why:** drives the Sorcier ranged basic attack from the normal attack timer (range/LOS/facing checks,
-then fires the 900209 visual missile and the delayed white hit) without ever doing a melee staff swing.
+**Why:** drives the ranged basic attack from the normal attack timer. The generic seam in
+`MobaArchetypes` dispatches to the archetype module (`Sorcier::HandleBasicAttackSwing`), which does the
+range/LOS/facing checks, fires the 900209 visual missile and lands the delayed white hit — never a melee
+staff swing. All Sorcier-specific auto-attack logic lives in `MobaSorcier.{h,cpp}`, not in the generic
+progression layer.
 
 ### 15. `src/server/game/Spells/SpellMgr.cpp` — `LoadSpellInfoCorrections`
 `ApplySpellFix` on `Moba::Sorcier::SpellEntropyBasicAttackVisual` (900209): copies the reference missile

@@ -283,4 +283,59 @@ void ResetForMatch(Player* player)
 
     player->GetSpellHistory()->ResetAllCooldowns();
 }
+
+void ClearArchetypeRuntime(Player const* player)
+{
+    // Each archetype that keeps per-player runtime state clears it here (no-op if it has none).
+    Sorcier::ClearPlayer(player);
+}
+
+// --- Champion ranged auto-attack dispatch ----------------------------------------------------
+// Generic seam for the core combat hooks. Routes to the archetype that auto-attacks at range. Only
+// the Sorcier does today; add cases here when another ranged archetype lands.
+
+bool UsesChampionRangedAutoAttack(Player const* player)
+{
+    if (!player || !player->InBattleground())
+        return false;
+
+    MobaPlayerState const* state = GetPlayerState(player);
+    if (!state || !state->ProgressInitialized)
+        return false;
+
+    return state->ArchetypeIndex == Sorcier::ArchetypeIndex;
+}
+
+bool StartChampionRangedAutoAttack(Player* player, Unit* victim)
+{
+    if (!UsesChampionRangedAutoAttack(player))
+        return false;
+
+    Sorcier::StartBasicAttack(player, victim);
+    return true;
+}
+
+bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg)
+{
+    if (!UsesChampionRangedAutoAttack(player))
+        return false;
+
+    Sorcier::HandleBasicAttackSwing(player, victim, swingErrorMsg);
+    return true;
+}
+
+bool IsChampionBasicAttackSpell(Player const* champ, uint32 spellId)
+{
+    MobaPlayerState const* state = GetPlayerState(champ);
+    if (!state || !state->ProgressInitialized)
+        return false;
+
+    switch (state->ArchetypeIndex)
+    {
+        case Sorcier::ArchetypeIndex:
+            return Sorcier::IsBasicAttackSpell(spellId);
+        default:
+            return false;
+    }
+}
 }

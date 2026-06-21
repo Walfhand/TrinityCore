@@ -12,6 +12,7 @@
 #include <cstddef>
 
 class Player;
+class Unit;
 
 namespace Moba
 {
@@ -59,6 +60,16 @@ void ReapplyArchetypeRuntime(Player* player, uint32 archetypeIndex, uint32 mobaL
 void MaxArchetypeSkills(Player* player, uint32 archetypeIndex);
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);
 void ResetForMatch(Player* player);
+void ClearArchetypeRuntime(Player const* player);   // drop any per-archetype runtime state on match cleanup
+
+// Champion ranged auto-attack seam. The core combat hooks (CombatHandler / Player::Update) call these
+// generic entry points; they dispatch to the archetype that auto-attacks at range (currently only the
+// Sorcier). This keeps per-archetype combat logic in the archetype module, not in the core or in the
+// generic progression layer.
+bool UsesChampionRangedAutoAttack(Player const* player);
+bool StartChampionRangedAutoAttack(Player* player, Unit* victim);                  // true = suppress vanilla melee swing
+bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg); // true = handled here this tick
+bool IsChampionBasicAttackSpell(Player const* champ, uint32 spellId);              // true for that champion's auto-attack spell(s)
 }
 
 #endif

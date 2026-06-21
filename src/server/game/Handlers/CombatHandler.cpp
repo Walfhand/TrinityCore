@@ -21,7 +21,7 @@
 #include "CreatureAI.h"
 #include "DBCStructure.h"
 #include "Log.h"
-#include "MobaProgression.h"
+#include "MobaArchetypes.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Vehicle.h"
