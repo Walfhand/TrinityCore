@@ -97,9 +97,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900003, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 26577, 0, 0, 0,
     'Blue Minion', 'Prototype Lane Unit', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 0.8, 0, 0,
+    14, 0, 1, 1.14286, 0.4, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -123,9 +123,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900004, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 26577, 0, 0, 0,
     'Red Minion', 'Prototype Lane Unit', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 0.8, 0, 0,
+    14, 0, 1, 1.14286, 0.4, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -176,9 +176,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900005, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 9793, 0, 0, 0,
     'Blue Caster Minion', 'Prototype Lane Caster', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 0.75, 0, 0,
+    14, 0, 1, 1.14286, 0.4, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -202,9 +202,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900006, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 9793, 0, 0, 0,
     'Red Caster Minion', 'Prototype Lane Caster', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 0.75, 0, 0,
+    14, 0, 1, 1.14286, 0.4, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -228,9 +228,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900007, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 12818, 0, 0, 0,
     'Blue Siege Minion', 'Prototype Lane Cannon', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 1.3, 1, 0,
+    14, 0, 1, 1.14286, 0.4, 1, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -254,9 +254,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900008, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 12818, 0, 0, 0,
     'Red Siege Minion', 'Prototype Lane Cannon', NULL, 0, 10, 10, 0,
-    14, 0, 1, 1.14286, 1.3, 1, 0,
+    14, 0, 1, 1.14286, 0.4, 1, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,

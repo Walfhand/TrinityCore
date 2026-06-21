@@ -10,10 +10,13 @@
 #include "MobaTower.h"
 #include "MotionMaster.h"
 #include "Player.h"
+#include "Random.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "Unit.h"
 #include "WorldSession.h"
+
+#include <algorithm>
 
 namespace
 {
@@ -90,7 +93,7 @@ public:
             if (_type == Moba::MinionType::Caster)
                 CastAtVictim(diff);
             else
-                DoMeleeAttackIfReady();
+                MeleeAtVictim();
         }
 
     private:
@@ -123,10 +126,30 @@ public:
             if (target == me->GetVictim())
                 return;
 
-            // Casters poke from range; melee/siege close to melee range.
+            // Casters poke from range; melee/siege close to melee range. We pass meleeAttack=false so the
+            // engine never runs its own auto-swing (which would play the shared, un-mutable weapon sound);
+            // the swing is driven manually in MeleeAtVictim (silent damage + a sound-less attack emote).
             bool const melee = _type != Moba::MinionType::Caster;
-            if (me->Attack(target, melee))
+            if (me->Attack(target, false))
                 me->GetMotionMaster()->MoveChase(target, melee ? 0.0f : CasterChaseDistance);
+        }
+
+        // Minion-specific silent melee: deal the configured weapon damage directly (no SMSG_ATTACKERSTATEUPDATE,
+        // so no shared swing/impact sound) and play a one-shot attack emote for the visible swing animation.
+        void MeleeAtVictim()
+        {
+            Unit* victim = me->GetVictim();
+            if (!victim || !me->IsWithinMeleeRange(victim) || !me->isAttackReady(BASE_ATTACK))
+                return;
+
+            uint32 const minD = uint32(me->GetWeaponDamageRange(BASE_ATTACK, MINDAMAGE));
+            uint32 const maxD = uint32(me->GetWeaponDamageRange(BASE_ATTACK, MAXDAMAGE));
+            uint32 const dmg = urand(std::min(minD, maxD), std::max(minD, maxD));
+            if (dmg)
+                Unit::DealDamage(me, victim, dmg, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
+
+            me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+            me->resetAttackTimer(BASE_ATTACK);
         }
 
         void CastAtVictim(uint32 diff)

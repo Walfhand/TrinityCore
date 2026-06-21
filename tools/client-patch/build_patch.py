@@ -21,6 +21,32 @@ import storm
 
 PATCH = os.path.join(ROOT, "client-patches", "frFR", "patch-frFR-4.MPQ")
 
+# Base creature DBCs are read from the server-extracted copy (same data the client ships). We only
+# need them to silence the MOBA minions client-side (sounds are client-only; the server ignores them).
+DBC_SRC = os.path.join(ROOT, "docker", "data", "dbc")
+SILENT_SOUND_ID = 9000        # custom CreatureSoundData row: all sound refs stay 0 -> no aggro/wound/death sound
+CDI_SOUND_FIELD = 2           # CreatureDisplayInfo.SoundID: overrides the model's combat sounds for THIS display
+# Why the display and not the model: a model (e.g. CreatureModelData HumanMale) is shared with champions,
+# so muting it would silence players too. The display-level override only affects NPCs using that display.
+
+# Minion silencing is data-driven: we read the minions' modelid1 (= display id) straight from the SQL and
+# mute every display they use. Change a minion's model in the SQL, rerun this script, and it stays silent.
+MINION_SQL = os.path.join(ROOT, "sql", "custom", "world", "0001_moba_lobby.sql")
+MINION_ENTRIES = {900003, 900004, 900005, 900006, 900007, 900008}   # melee/caster/siege, blue+red
+
+# Generic SOUND files to silence by shipping a zero-byte file at the same MPQ path (the client then plays
+# nothing). 3.3.5 has no per-creature sound mute (and no addon API for it), so we mute the specific files
+# the minions trigger. These are shared files, but no current champion uses them, so in practice it only
+# silences the minions. To mute a different minion spell later: find its SoundEntries files (SpellVisual ->
+# SpellVisualKit field 15 = SoundID -> SoundEntries DirectoryBase + File) and add their paths here.
+MUTE_SOUND_FILES = [
+    # Caster minion Wrath (5176): every sound its SpellVisual (3860) kits reference (kit field 15 = SoundID).
+    "Sound\\Spells\\Cast\\NatureCast.wav",      # cast sound
+    "Sound\\Spells\\LightningBoltImpact.wav",   # impact sound
+    "Sound\\Spells\\LifeDrainLoop.wav",         # precast loop ("the spell leaving")
+    "Sound\\Spells\\Cast\\HolyCast.wav",        # secondary kit sound
+]
+
 # --- Spell.dbc field indices (3.3.5a, 0-based; see README) ---------------
 F_ID = 0
 F_CASTTIME = 28
@@ -223,6 +249,52 @@ def build_skilllineability_dbc(base_bytes):
     return serialize_dbc(fc, rs, rows, strblock)
 
 
+def build_creature_sound_dbc(base_bytes):
+    """Append one fully-zeroed (silent) CreatureSoundData row; idempotent on re-run."""
+    rc, fc, rs, rows, strblock = parse_dbc(base_bytes)
+    rows = [r for r in rows if get_field(r, F_ID) != SILENT_SOUND_ID]
+    silent = bytearray(rs)               # all fields 0 = no sound references at all
+    set_field(silent, F_ID, SILENT_SOUND_ID)
+    rows.append(silent)
+    print(f"  CreatureSoundData.dbc: +{SILENT_SOUND_ID} (silent)")
+    return serialize_dbc(fc, rs, rows, strblock)
+
+
+def minion_display_ids():
+    """Read modelid1 (the CreatureDisplayInfo id) for each minion entry straight from the SQL, so model
+    changes are picked up automatically on the next build. The leading creature_template columns are all
+    numeric, so a plain comma split is safe for reading `entry` and `modelid1`."""
+    import re
+    sql = open(MINION_SQL, encoding="utf-8").read()
+    ids = set()
+    for m in re.finditer(r"INSERT\s+INTO\s+`creature_template`\s*\(([^)]*)\)\s*VALUES\s*\((.*?)\)\s*;",
+                         sql, re.DOTALL | re.IGNORECASE):
+        cols = [c.strip().strip('`') for c in m.group(1).split(',')]
+        vals = [v.strip() for v in m.group(2).split(',')]
+        if len(cols) != len(vals):
+            continue
+        row = dict(zip(cols, vals))
+        try:
+            entry = int(row.get('entry', '0'))
+            model = int(row.get('modelid1', '0'))
+        except ValueError:
+            continue
+        if entry in MINION_ENTRIES and model > 0:
+            ids.add(model)
+    return ids
+
+
+def build_creature_display_dbc(base_bytes, display_ids):
+    """Point each minion display's SoundID at the silent row so its NPCs make no combat sounds."""
+    rc, fc, rs, rows, strblock = parse_dbc(base_bytes)
+    wanted = set(display_ids)
+    for r in rows:
+        if get_field(r, F_ID) in wanted:
+            set_field(r, CDI_SOUND_FIELD, SILENT_SOUND_ID)
+            print(f"  CreatureDisplayInfo.dbc: {get_field(r, F_ID)} SoundID -> {SILENT_SOUND_ID}")
+    return serialize_dbc(fc, rs, rows, strblock)
+
+
 def main():
     print(f"Reading base DBCs from {PATCH}")
     spell = storm.read_file(PATCH, "DBFilesClient\\Spell.dbc")
@@ -231,17 +303,38 @@ def main():
     new_spell = build_spell_dbc(spell)
     new_sla = build_skilllineability_dbc(sla)
 
+    # Silence the MOBA minions on whatever display(s) the SQL gives them: client-only, players unaffected.
+    displays = minion_display_ids()
+    print(f"  minion display ids from SQL: {sorted(displays)}")
+    new_csd = build_creature_sound_dbc(open(os.path.join(DBC_SRC, "CreatureSoundData.dbc"), "rb").read())
+    new_cdi = build_creature_display_dbc(open(os.path.join(DBC_SRC, "CreatureDisplayInfo.dbc"), "rb").read(), displays)
+
     stage = os.path.join(HERE, "_stage")
     os.makedirs(stage, exist_ok=True)
     spath = os.path.join(stage, "Spell.dbc")
     slapath = os.path.join(stage, "SkillLineAbility.dbc")
+    csdpath = os.path.join(stage, "CreatureSoundData.dbc")
+    cdipath = os.path.join(stage, "CreatureDisplayInfo.dbc")
     open(spath, "wb").write(new_spell)
     open(slapath, "wb").write(new_sla)
+    open(csdpath, "wb").write(new_csd)
+    open(cdipath, "wb").write(new_cdi)
 
-    storm.build_archive(PATCH, {
+    # Zero-byte file used to silence each muted sound path (the client plays an empty wav = no sound).
+    emptypath = os.path.join(stage, "silent.empty")
+    open(emptypath, "wb").close()
+
+    archive = {
         "DBFilesClient\\Spell.dbc": spath,
         "DBFilesClient\\SkillLineAbility.dbc": slapath,
-    })
+        "DBFilesClient\\CreatureSoundData.dbc": csdpath,
+        "DBFilesClient\\CreatureDisplayInfo.dbc": cdipath,
+    }
+    for sound_path in MUTE_SOUND_FILES:
+        archive[sound_path] = emptypath
+        print(f"  mute sound: {sound_path}")
+
+    storm.build_archive(PATCH, archive)
     print(f"Wrote {PATCH}  ({os.path.getsize(PATCH)} bytes)")
     print("Install: copy it to the client Data/frFR/ folder, clear the client Cache, relog.")
 
