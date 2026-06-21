@@ -55,6 +55,9 @@ public:
             Moba::OnMinionKilled(killer, me);
 
             Moba::ClearMinionState(me);
+
+            // Remove the corpse quickly so the lane is not littered with bodies.
+            me->DespawnOrUnsummon(Milliseconds(3000));
         }
 
         void EnterEvadeMode(EvadeReason /*why*/) override

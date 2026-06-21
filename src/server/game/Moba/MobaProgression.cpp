@@ -204,6 +204,7 @@ void EnsureChampionLevel(Player* player, MobaPlayerState& state)
 
     player->GiveLevel(state.Level);
     MaxArchetypeSkills(player, state.ArchetypeIndex);   // GiveLevel reset skills to level * 5; force them back to max
+    player->SetFreeTalentPoints(0);                     // no talent system in the MOBA mode
     state.AppliedStats = {};
 }
 
@@ -236,6 +237,12 @@ void GrantPlayerXp(Player* player, MobaPlayerState& state, uint32 xp, bool notif
     {
         state.Xp += xp;
 
+        // Snapshot health so a level-up does NOT full-heal (GiveLevel would). LoL-style: you gain the
+        // max-health increase but keep your missing health.
+        uint32 const preHealth = player->GetHealth();
+        uint32 const preMaxHealth = player->GetMaxHealth();
+        bool leveled = false;
+
         while (state.Level < MobaMaxLevel)
         {
             uint32 const next = GetXpForNextLevel(state.Level);
@@ -244,6 +251,7 @@ void GrantPlayerXp(Player* player, MobaPlayerState& state, uint32 xp, bool notif
 
             state.Xp -= next;
             ++state.Level;
+            leveled = true;
 
             EnsureChampionLevel(player, state);
             RecalculateStats(state);
@@ -252,6 +260,13 @@ void GrantPlayerXp(Player* player, MobaPlayerState& state, uint32 xp, bool notif
 
             if (notify)
                 Announce(player, Trinity::StringFormat("Niveau MOBA {} atteint.", state.Level));
+        }
+
+        if (leveled)
+        {
+            uint32 const newMaxHealth = player->GetMaxHealth();
+            uint32 const gain = newMaxHealth > preMaxHealth ? newMaxHealth - preMaxHealth : 0;
+            player->SetHealth(std::max<uint32>(1, std::min<uint32>(newMaxHealth, preHealth + gain)));
         }
     }
 

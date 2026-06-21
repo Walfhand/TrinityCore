@@ -4,6 +4,7 @@
 
 #include "MobaTower.h"
 
+#include "Battleground.h"
 #include "Cell.h"
 #include "CellImpl.h"
 #include "Creature.h"
@@ -21,6 +22,7 @@
 #include "SpellMgr.h"
 #include "TemporarySummon.h"
 #include "Unit.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <list>
@@ -394,7 +396,16 @@ void OnTowerDestroyed(Creature* tower)
         return;
 
     uint32 const teamId = GetTeamIdForTowerEntry(tower->GetEntry());
-    tower->Yell(teamId == BlueTeamId ? "Une tour bleue est tombee !" : "Une tour rouge est tombee !", LANG_UNIVERSAL);
+    char const* msg = teamId == BlueTeamId ? "Une tour bleue est tombee !" : "Une tour rouge est tombee !";
+
+    // Announce to every player in the match, not only those near the tower.
+    BattlegroundMap* bgMap = tower->GetMap()->ToBattlegroundMap();
+    if (Battleground* bg = bgMap ? bgMap->GetBG() : nullptr)
+    {
+        for (auto const& itr : bg->GetPlayers())
+            if (Player* player = ObjectAccessor::GetPlayer(*tower, itr.first))
+                player->GetSession()->SendNotification("%s", msg);
+    }
 
     ClearTowerState(tower);
 }
