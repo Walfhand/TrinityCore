@@ -15,6 +15,7 @@
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "SpellInfo.h"
 #include "StringFormat.h"
 #include "Util.h"
 #include "WorldSession.h"
@@ -212,7 +213,9 @@ void EnsureChampionLevel(Player* player, MobaPlayerState& state)
 // money widget (1 MOBA gold shown as 1 gold piece).
 void SyncProgressionToClient(Player* player, MobaPlayerState const& state)
 {
-    player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+    // Native XP is blocked by a core hook (SuppressesNativeXp), NOT by PLAYER_FLAGS_NO_XP_GAIN, because
+    // that flag hides/locks the client XP bar. Clear it in case it was set previously.
+    player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
     player->SetMoney(state.Gold * MobaCopperPerGold);
 
     if (state.Level < MobaMaxLevel)
@@ -560,6 +563,28 @@ bool BlocksGraveyardResurrect(Player const* player)
 
     MobaPlayerState const* state = GetPlayerState(player);
     return state && state->ProgressInitialized && player->InBattleground();
+}
+
+bool SuppressesNativeXp(Player const* player)
+{
+    MobaPlayerState const* state = GetPlayerState(player);
+    return state && state->ProgressInitialized && player->InBattleground();
+}
+
+bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* target)
+{
+    if (!caster || !target || !spellInfo)
+        return false;
+
+    uint32 const entry = target->GetEntry();
+    if (!IsTowerEntry(entry) && !IsNexusEntry(entry))
+        return false;
+
+    if (spellInfo->IsPositive() || spellInfo->IsAutoRepeatRangedSpell())
+        return false;   // beneficial spells + ranged auto-attacks are fine
+
+    Player* champ = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+    return champ && champ->InBattleground();
 }
 
 // Passive gold trickle (LoL-style): once a champion has been in the match past the start

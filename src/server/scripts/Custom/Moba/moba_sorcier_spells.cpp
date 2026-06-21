@@ -51,7 +51,12 @@ void CollectEnemies(Player* caster, WorldObject* center, float radius, std::list
     Trinity::AnyUnitInObjectRangeCheck check(center, radius);
     Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(center, out, check);
     Cell::VisitAllObjects(center, searcher, radius);
-    out.remove_if([caster](Unit* u) { return !u || !caster->IsValidAttackTarget(u); });
+    // Structures (towers/nexus) are excluded: champion spells never damage them, only auto-attacks do.
+    out.remove_if([caster](Unit* u)
+    {
+        return !u || !caster->IsValidAttackTarget(u)
+            || Moba::IsTowerEntry(u->GetEntry()) || Moba::IsNexusEntry(u->GetEntry());
+    });
 }
 
 // Passive "Marque d'entropie": each ability adds a stack; the 3rd stack detonates for bonus damage.
@@ -116,8 +121,9 @@ public:
     SpellScript* GetSpellScript() const override { return new script_impl(); }
 };
 
-// W - Faille d'entropie: ground-targeted AoE. The engine resolves the area + the slow aura (Effect2);
-// the script only overrides the per-target damage (scaled by the gauge) and applies the mark.
+// W - Faille d'entropie: ground-targeted AoE. The spell row only resolves area damage;
+// the script applies the slow with the dedicated 900205 aura so no Shadowfury stun
+// behavior/display leaks from the cloned client row.
 uint32 constexpr RiftBaseDamage = 60;
 uint32 constexpr RiftDamagePerLevel = 8;
 float constexpr RiftApRatio = 0.50f;
@@ -132,6 +138,15 @@ public:
     {
         PrepareSpellScript(script_impl);
 
+        // Structures are never valid targets for the AoE (no damage, no slow, no mark on towers/nexus).
+        void FilterStructures(std::list<WorldObject*>& targets)
+        {
+            targets.remove_if([](WorldObject* obj)
+            {
+                return obj && (Moba::IsTowerEntry(obj->GetEntry()) || Moba::IsNexusEntry(obj->GetEntry()));
+            });
+        }
+
         void HandleDamage(SpellEffIndex /*effIndex*/)
         {
             Player* caster = GetCaster()->ToPlayer();
@@ -145,6 +160,7 @@ public:
             float const mult = Moba::Sorcier::GetInstabilityDamageMultiplier(caster);
 
             SetHitDamage(int32((base + apBonus) * mult));
+            caster->CastSpell(target, Moba::Sorcier::SpellEntropySlow, true);
             ApplyEntropyMark(caster, target);
         }
 
@@ -159,6 +175,7 @@ public:
 
         void Register() override
         {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(script_impl::FilterStructures, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
             OnEffectHitTarget += SpellEffectFn(script_impl::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
             AfterCast += SpellCastFn(script_impl::HandleAfterCast);
         }

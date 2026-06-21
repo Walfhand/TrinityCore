@@ -33,11 +33,23 @@ F_MANACOST = 42
 F_MANACOSTPCT = 204
 F_RECOVERY = 29        # cooldown shown by the client (ms); keep == the server SpellScript cooldown
 F_RANGE = 46           # RangeIndex
+F_DURATION = 40        # DurationIndex
+F_EFFECT1 = 71         # Effect[0]
 F_TARGETA = 86         # EffectImplicitTargetA[0]
 F_CATEGORY = 1         # spell Category; shared categories link cooldowns (must be 0 for our spells)
 F_CATRECOVERY = 30     # CategoryRecoveryTime
 F_ICON = 133           # SpellIconID
 F_ATTR = 4             # Attributes (SPELL_ATTR0_*)
+F_EFFECT2 = 72         # Effect[1]; cleared on cloned spells whose 2nd effect we don't want predicted
+F_EFFECTMECHANIC1 = 83 # EffectMechanic[0]
+F_EFFECTMECHANIC2 = 84 # EffectMechanic[1] (e.g. Shadowfury's STUN); cleared with Effect2
+F_AURANAME1 = 95       # EffectApplyAuraName[0]
+F_AURANAME2 = 96       # EffectApplyAuraName[1] (e.g. MOD_STUN); cleared with Effect2
+F_BASEPOINTS1 = 80     # EffectBasePoints[0]
+F_BASEPOINTS2 = 81     # EffectBasePoints[1]
+F_RADIUS1 = 92         # EffectRadiusIndex[0]
+F_TARGETA2 = 87        # EffectImplicitTargetA[1]
+F_RADIUS2 = 93         # EffectRadiusIndex[1]
 F_MAXLEVEL = 37
 F_BASELEVEL = 38
 F_SPELLLEVEL = 39      # drives the "Niveau X requis" tooltip; zero it (unlock is gated by the archetype)
@@ -51,7 +63,8 @@ NFIELDS = 234
 CUSTOM_SPELLS = [
     {"id": 900200, "ref": 686,   "name": "Decharge instable", "cd": 3000,   # Shadow Bolt: shadow nuke
      "desc": "Lance une decharge d'ombre instable. Degats accrus par votre Instabilite."},
-    {"id": 900201, "ref": 30283, "name": "Faille d'entropie", "cd": 8000,   # Shadowfury: ground-target AoE skillshot
+    {"id": 900201, "ref": 30283, "name": "Faille d'entropie", "cd": 8000, "duration": 39,  # Shadowfury clone; clear its stun aura
+     "effect2": 0, "effect_mechanic2": 0, "aura2": 0, "basepoints2": 0, "target2": 0, "radius2": 0,
      "desc": "Skillshot au sol : degats de zone + ralentissement. Degats accrus par l'Instabilite."},
     {"id": 900202, "ref": 1953,  "name": "Pas du neant", "cd": 14000, "icon": 87,  # Blink: real leap (anim+sound); shadow-teleport icon
      "desc": "Saut dimensionnel : tu bondis en avant et ralentis les ennemis a l'arrivee."},
@@ -59,7 +72,8 @@ CUSTOM_SPELLS = [
      "desc": "Consomme toute ton Instabilite pour une explosion de feu autour de toi. Plus la jauge est haute, plus ca tape."},
     {"id": 900204, "ref": 686,   "name": "Marque d'entropie", "cd": 0, "icon": 2311,
      "desc": "Marque d'entropie : a 3 charges, elle detone pour des degats magiques."},
-    {"id": 900205, "ref": 686,   "name": "Entropie - ralentissement", "cd": 0, "icon": 596,
+    {"id": 900205, "ref": 686,   "name": "Entropie - ralentissement", "cd": 0, "icon": 596, "duration": 39,
+     "effect1": 6, "effect_mechanic1": 11, "aura1": 33, "basepoints1": -30, "target": 6, "radius1": 0,
      "desc": "Ralenti par l'energie d'entropie."},
     {"id": 900206, "ref": 172,   "name": "Marque d'entropie", "cd": 0, "target": 1, "attr": 0x40, "icon": 1979,
      "desc": "Passif : vos sorts appliquent une Marque d'entropie. A 3 charges, elle detone pour des degats magiques."},
@@ -138,10 +152,27 @@ def build_spell_dbc(base_bytes):
             set_field(row, F_TARGETA, c["target"])  # match the server effect target (self vs enemy)
         if "range" in c:
             set_field(row, F_RANGE, c["range"])
+        if "duration" in c:
+            set_field(row, F_DURATION, c["duration"])
         if "icon" in c:
             set_field(row, F_ICON, c["icon"])        # distinct icon per ability
         if "attr" in c:
             set_field(row, F_ATTR, get_field(row, F_ATTR) | c["attr"])  # e.g. SPELL_ATTR0_PASSIVE
+        if "effect1" in c:
+            set_field(row, F_EFFECT1, c["effect1"])
+            set_field(row, F_EFFECTMECHANIC1, c.get("effect_mechanic1", 0))
+            set_field(row, F_AURANAME1, c.get("aura1", 0))
+            set_field(row, F_BASEPOINTS1, c.get("basepoints1", 0))
+            set_field(row, F_RADIUS1, c.get("radius1", 0))
+        if "effect2" in c:
+            # Replace the whole 2nd-effect group. Shadowfury's clone carries a STUN here; Faille
+            # d'entropie clears it and the server script applies the dedicated slow aura instead.
+            set_field(row, F_EFFECT2, c["effect2"])
+            set_field(row, F_EFFECTMECHANIC2, c.get("effect_mechanic2", 0))
+            set_field(row, F_AURANAME2, c.get("aura2", 0))
+            set_field(row, F_BASEPOINTS2, c.get("basepoints2", 0))
+            set_field(row, F_TARGETA2, c.get("target2", 0))
+            set_field(row, F_RADIUS2, c.get("radius2", 0))
         name_off = add_string(strblock, c["name"])
         set_field(row, F_NAME, name_off)            # enUS
         set_field(row, F_NAME + FRFR, name_off)      # frFR (the column the client reads)

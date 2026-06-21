@@ -220,8 +220,9 @@ void MaxArchetypeSkills(Player* player, uint32 archetypeIndex)
 
 void ApplyArchetype(Player* player, Archetype const& archetype)
 {
-    // Block native XP gain so kills/quests never move the bar; the MOBA systems drive it.
-    player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+    // Native XP is blocked by a core hook (Moba::SuppressesNativeXp), not by PLAYER_FLAGS_NO_XP_GAIN
+    // (which hides the client XP bar). Clear the flag in case an older session set it.
+    player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
 
     // Champions live on the MOBA level curve (1 -> 18). Starter gear is req-level-1 and the
     // arena bracket is clamped (see GetBattlegroundBracketByLevel) so level 1 can still port.

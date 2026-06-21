@@ -333,6 +333,23 @@ public:
         if (damage)
             Moba::NoteChampionDamage(attacker, victim);
     }
+
+    // Champions can only damage structures (towers/nexus) with auto-attacks, not spells: a long-range
+    // spell would otherwise out-range the tower and poke it safely. Auto-attacks use ModifyMeleeDamage
+    // (untouched); minion spells are not from a champion, so they still hit.
+    void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage) override
+    {
+        if (!target || damage <= 0)
+            return;
+
+        uint32 const entry = target->GetEntry();
+        if (!Moba::IsTowerEntry(entry) && !Moba::IsNexusEntry(entry))
+            return;
+
+        Player* champ = attacker ? attacker->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr;
+        if (champ && champ->InBattleground())
+            damage = 0;
+    }
 };
 
 namespace

@@ -2368,6 +2368,11 @@ void Player::GiveXP(uint32 xp, Unit* victim, float group_rate)
     if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
         return;
 
+    // MOBA: champions never gain native XP (the MOBA systems drive the bar). Done here instead of
+    // the NO_XP_GAIN flag, which would hide the client XP bar.
+    if (Moba::SuppressesNativeXp(this))
+        return;
+
     if (victim && victim->GetTypeId() == TYPEID_UNIT && !victim->ToCreature()->hasLootRecipient())
         return;
 

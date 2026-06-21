@@ -11,6 +11,7 @@
 class Player;
 class Creature;
 class Unit;
+class SpellInfo;
 
 namespace Moba
 {
@@ -69,6 +70,14 @@ uint32 GetPlayerMobaLevel(Player const* player);
 // True for a dead champion in an active match: it must never auto-resurrect or teleport to a
 // graveyard. It releases into a free-roaming spectator ghost; only the match timer respawns it.
 bool BlocksGraveyardResurrect(Player const* player);
+
+// True while a champion is in a match: native WoW XP must not apply (the MOBA drives the bar).
+// Used by a core hook instead of PLAYER_FLAGS_NO_XP_GAIN, which would hide the client XP bar.
+bool SuppressesNativeXp(Player const* player);
+
+// True if a champion's harmful spell must NOT be cast on a structure (tower/nexus): structures are
+// only damageable by auto-attacks. Ranged auto-attacks and beneficial spells are allowed. Core hook.
+bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* target);
 
 // Periodic ticks (driven once per world update by a thin script hook).
 void UpdatePassiveGold(uint32 diff);

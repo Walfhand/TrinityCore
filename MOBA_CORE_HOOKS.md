@@ -106,6 +106,24 @@ Early-out guard after the `IsAlive()` check: if `Moba::BlocksGraveyardResurrect(
 on its own corpse — letting the player reclaim it for an instant self-rez. This blocks that path so
 respawn stays governed only by the match timer.
 
+### 10. `src/server/game/Entities/Player/Player.cpp` — `Player::GiveXP`
+Early-out guard: if `Moba::SuppressesNativeXp(this)` (a champion in an active match), return before any
+native XP is applied. (Player.cpp already includes `#include "MobaProgression.h"`.)
+
+**Why:** champions live on the MOBA XP curve (the MOBA systems drive the bar via `SetXP`). Native WoW XP
+from kills must not apply. We previously used `PLAYER_FLAGS_NO_XP_GAIN`, but that flag hides/locks the
+client XP bar, so it was invisible. This guard suppresses native XP without setting the flag.
+
+### 11. `src/server/game/Spells/Spell.cpp` — `Spell::CheckCast`
+Early-out guard near the top: if `Moba::BlocksSpellOnStructure(casterUnit, m_spellInfo, m_targets.GetUnitTarget())`,
+return `SPELL_FAILED_BAD_TARGETS`. (Also includes `#include "MobaProgression.h"`.)
+
+**Why:** structures (towers/nexus) must only be damageable by auto-attacks, not spells (a long-range
+spell would out-range the tower and poke it safely; zeroing the damage still let the cast apply the
+entropy mark). The guard refuses the cast itself for champion harmful spells targeting a structure,
+while allowing ranged auto-attacks (`IsAutoRepeatRangedSpell`) and beneficial spells. AoE spells also
+exclude structures from their target search in the spell scripts.
+
 ---
 
 ## Config (additive, low conflict risk)

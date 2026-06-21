@@ -26,18 +26,18 @@ INSERT INTO `spell_dbc`
 VALUES
     (@SPELL_ENTROPY_BOLT, 0, 1, 101, 1, 1, 0, 4, 2, 1, 6, 'Decharge instable', 32, 1);
 
--- W: Faille d'entropie - ground-targeted AoE (engine handles the area): SCHOOL_DAMAGE + slow aura.
+-- W: Faille d'entropie - ground-targeted AoE. The spell itself only deals damage;
+-- the C++ SpellScript applies the shared slow aura (900205) to avoid inheriting any
+-- Shadowfury stun aura behavior/client display from the cloned row.
 -- Target 16 = TARGET_UNIT_DEST_AREA_ENEMY, radius index 14 (~Shadowfury). Damage overridden in C++.
 INSERT INTO `spell_dbc`
     (`Id`, `Attributes`, `CastingTimeIndex`, `ProcChance`, `BaseLevel`, `SpellLevel`,
      `DurationIndex`, `RangeIndex`,
      `Effect1`, `EffectDieSides1`, `EffectImplicitTargetA1`, `EffectRadiusIndex1`,
-     `Effect2`, `EffectDieSides2`, `EffectBasePoints2`, `EffectApplyAuraName2`, `EffectImplicitTargetA2`, `EffectRadiusIndex2`,
      `SpellName`, `SchoolMask`, `DmgClass`)
 VALUES
     (@SPELL_ENTROPY_RIFT, 0, 1, 101, 1, 1, 39, 4,
      2, 1, 16, 14,
-     6, 0, -30, 33, 16, 14,
      'Faille d''entropie', 32, 1);
 
 -- E: Pas du neant - a real Blink (LEAP effect 29, like spell 1953). Slow/instability added in C++.
@@ -71,9 +71,9 @@ VALUES
 INSERT INTO `spell_dbc`
     (`Id`, `Attributes`, `CastingTimeIndex`, `ProcChance`, `BaseLevel`, `SpellLevel`,
      `DurationIndex`, `RangeIndex`, `Effect1`, `EffectDieSides1`, `EffectBasePoints1`,
-     `EffectApplyAuraName1`, `EffectImplicitTargetA1`, `SpellName`, `SchoolMask`, `DmgClass`)
+     `EffectMechanic1`, `EffectApplyAuraName1`, `EffectImplicitTargetA1`, `SpellName`, `SchoolMask`, `DmgClass`)
 VALUES
-    (@SPELL_ENTROPY_SLOW, 0, 1, 101, 1, 1, 39, 4, 6, 0, -30, 33, 6, 'Entropie - ralentissement', 32, 1);
+    (@SPELL_ENTROPY_SLOW, 0, 1, 101, 1, 1, 39, 4, 6, 0, -30, 11, 33, 6, 'Entropie - ralentissement', 32, 1);
 
 -- Passive display entry (Attributes 64 = SPELL_ATTR0_PASSIVE). Mechanic lives in the active scripts;
 -- this exists so the passive shows in the spellbook.

@@ -36,6 +36,7 @@
 #include "Item.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "MobaProgression.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -5163,6 +5164,11 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
     // check death state
     if (m_caster->ToUnit() && !m_caster->ToUnit()->IsAlive() && !m_spellInfo->IsPassive() && !(m_spellInfo->HasAttribute(SPELL_ATTR0_CASTABLE_WHILE_DEAD) || (IsTriggered() && !m_triggeredByAuraSpell)))
         return SPELL_FAILED_CASTER_DEAD;
+
+    // MOBA: champions cannot cast harmful spells on structures (towers/nexus); only auto-attacks damage them.
+    if (Unit* casterUnit = m_caster->ToUnit())
+        if (Moba::BlocksSpellOnStructure(casterUnit, m_spellInfo, m_targets.GetUnitTarget()))
+            return SPELL_FAILED_BAD_TARGETS;
 
     // Prevent cheating in case the player has an immunity effect and tries to interact with a non-allowed gameobject. The error message is handled by the client so we don't report anything here
     if (m_caster->ToPlayer() && m_targets.GetGOTarget())
