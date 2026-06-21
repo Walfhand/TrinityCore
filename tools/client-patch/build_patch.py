@@ -64,7 +64,7 @@ CUSTOM_SPELLS = [
     {"id": 900200, "ref": 686,   "name": "Decharge instable", "cd": 3000,   # Shadow Bolt: shadow nuke
      "desc": "Lance une decharge d'ombre instable. Degats accrus par votre Instabilite."},
     {"id": 900208, "ref": 6603, "name": "Trait d'entropie", "cd": 0, "icon": 3376,
-     "target": 6, "range": 3, "effect1": 3,
+     "target": 6, "range": 11, "effect1": 3,   # RangeIndex 11 = 15y, just under the server check (Sorcier::BasicAttackRange ~16.5y) so the client never lets you cast where the server replies "out of range"
      "desc": "Commande l'attaque de base a distance du Sorcier."},
     {"id": 900209, "ref": 44425, "name": "Trait d'entropie visuel", "cd": 0, "icon": 3376,
      "range": 3, "learn": False,
