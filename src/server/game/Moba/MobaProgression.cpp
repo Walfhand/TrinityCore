@@ -11,11 +11,14 @@
 #include "BattlegroundScore.h"
 #include "Chat.h"
 #include "Creature.h"
+#include "EventProcessor.h"
 #include "GameTime.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "SpellDefines.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "StringFormat.h"
 #include "Util.h"
 #include "WorldSession.h"
@@ -53,6 +56,76 @@ uint32 GetXpForNextLevel(uint32 level)
     // Gentle early curve for prototype games: first wave should matter, but not
     // instantly snowball into several levels.
     return 80 + level * 45;
+}
+
+uint32 CalculateSorcierBasicAttackDamage(Player* player, Unit* target)
+{
+    if (!player || !target)
+        return 0;
+
+    MobaPlayerState const* state = GetPlayerState(player);
+    if (!state)
+        return 0;
+
+    uint32 damage = state->Stats.AttackPower;
+    damage = player->MeleeDamageBonusDone(target, damage, RANGED_ATTACK, nullptr, SPELL_SCHOOL_MASK_NORMAL);
+    damage = target->MeleeDamageBonusTaken(player, damage, RANGED_ATTACK, nullptr, SPELL_SCHOOL_MASK_NORMAL);
+    return Unit::CalcArmorReducedDamage(player, target, damage, nullptr, RANGED_ATTACK);
+}
+
+void DealSorcierBasicAttackDamage(Player* player, Unit* target)
+{
+    if (!player || !target || !player->IsAlive() || !target->IsAlive() || !player->IsValidAttackTarget(target))
+        return;
+
+    uint32 const damage = CalculateSorcierBasicAttackDamage(player, target);
+    if (!damage)
+        return;
+
+    // Report the white hit as a non-melee (spell) damage log instead of SendAttackStateUpdate.
+    // SMSG_ATTACKERSTATEUPDATE always makes the client play the attacker's weapon swing; with a staff
+    // and no ranged weapon equipped, that is the staff melee strike. A non-melee log shows the damage
+    // number without any swing, so the only visible attack is the 900209 arcane missile (mirrors the
+    // tower's DealMagicDamage pattern). Physical school + already-armor-reduced amount, tied to 900208.
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(Sorcier::SpellEntropyBasicAttack);
+    SpellNonMeleeDamage log(player, target, Sorcier::SpellEntropyBasicAttack, SPELL_SCHOOL_MASK_NORMAL);
+    log.damage = damage;
+    player->SendSpellNonMeleeDamageLog(&log);
+    Unit::DealDamage(player, target, damage, nullptr, SPELL_DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, info, false);
+}
+
+class SorcierBasicAttackDamageEvent : public BasicEvent
+{
+public:
+    SorcierBasicAttackDamageEvent(Player* player, ObjectGuid targetGuid) : _player(player), _targetGuid(targetGuid) { }
+
+    bool Execute(uint64 /*time*/, uint32 /*diff*/) override
+    {
+        if (Unit* target = ObjectAccessor::GetUnit(*_player, _targetGuid))
+            DealSorcierBasicAttackDamage(_player, target);
+        return true;
+    }
+
+private:
+    Player* _player;
+    ObjectGuid _targetGuid;
+};
+
+void LaunchSorcierBasicAttack(Player* player, Unit* target)
+{
+    CastSpellExtraArgs args(true);
+    args.AddSpellMod(SPELLVALUE_BASE_POINT0, 0);
+    player->CastSpell(target, Sorcier::SpellEntropyBasicAttackVisual, args);
+
+    uint32 delayMs = 0;
+    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(Sorcier::SpellEntropyBasicAttackVisualRef))
+        if (spellInfo->Speed > 0.0f)
+            delayMs = uint32(player->GetDistance(target) / spellInfo->Speed * 1000.0f);
+
+    if (delayMs == 0)
+        DealSorcierBasicAttackDamage(player, target);
+    else
+        player->m_Events.AddEventAtOffset(new SorcierBasicAttackDamageEvent(player, target->GetGUID()), Milliseconds(delayMs));
 }
 
 // LoL increasing-growth curve: per-level gains grow with level, reaching base + 17*growth at lvl 18.
@@ -580,10 +653,16 @@ bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* targ
     if (!IsTowerEntry(entry) && !IsNexusEntry(entry))
         return false;
 
-    if (spellInfo->IsPositive() || spellInfo->IsAutoRepeatRangedSpell())
-        return false;   // beneficial spells + ranged auto-attacks are fine
-
     Player* champ = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+    if (spellInfo->Id == Sorcier::SpellEntropyBasicAttackVisual && champ && champ->InBattleground())
+    {
+        MobaPlayerState const* state = GetPlayerState(champ);
+        return !(state && state->ProgressInitialized && state->ArchetypeIndex == Sorcier::ArchetypeIndex);
+    }
+
+    if (spellInfo->IsPositive() || spellInfo->IsAutoRepeatRangedSpell() || spellInfo->Id == Sorcier::SpellEntropyBasicAttack)
+        return false;   // beneficial spells + ranged/basic auto-attacks are fine
+
     return champ && champ->InBattleground();
 }
 
@@ -604,6 +683,78 @@ bool BlocksSpellWithoutLineOfSight(Unit* caster, SpellInfo const* spellInfo, Uni
         return false;
 
     return !target->IsWithinLOSInMap(caster, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2);
+}
+
+bool UsesChampionRangedAutoAttack(Player const* player)
+{
+    MobaPlayerState const* state = GetPlayerState(player);
+    return player && state && state->ProgressInitialized && player->InBattleground() &&
+        state->ArchetypeIndex == Sorcier::ArchetypeIndex;
+}
+
+bool StartChampionRangedAutoAttack(Player* player, Unit* victim)
+{
+    if (!UsesChampionRangedAutoAttack(player))
+        return false;
+
+    if (!victim || !victim->IsAlive() || !player->IsValidAttackTarget(victim))
+        return true;
+
+    if (!player->IsWithinDistInMap(victim, MobaSorcierAutoAttackRange) ||
+        !player->IsWithinLOSInMap(victim, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2))
+    {
+        player->SendAttackSwingNotInRange();
+        return true;
+    }
+
+    player->Attack(victim, false);
+    return true;
+}
+
+bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg)
+{
+    if (!UsesChampionRangedAutoAttack(player))
+        return false;
+
+    if (player->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
+        player->Attack(victim, false);
+
+    if (!victim || !victim->IsAlive() || !player->IsValidAttackTarget(victim))
+    {
+        player->setAttackTimer(BASE_ATTACK, 100);
+        return true;
+    }
+
+    if (!player->isAttackReady(BASE_ATTACK))
+        return true;
+
+    if (!player->IsWithinDistInMap(victim, MobaSorcierAutoAttackRange) ||
+        !player->IsWithinLOSInMap(victim, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2))
+    {
+        player->setAttackTimer(BASE_ATTACK, 100);
+        if (swingErrorMsg != 1)
+        {
+            player->SendAttackSwingNotInRange();
+            swingErrorMsg = 1;
+        }
+        return true;
+    }
+
+    if (!player->HasInArc(float(M_PI), victim))
+    {
+        player->setAttackTimer(BASE_ATTACK, 100);
+        if (swingErrorMsg != 2)
+        {
+            player->SendAttackSwingBadFacingAttack();
+            swingErrorMsg = 2;
+        }
+        return true;
+    }
+
+    swingErrorMsg = 0;
+    LaunchSorcierBasicAttack(player, victim);
+    player->resetAttackTimer(BASE_ATTACK);
+    return true;
 }
 
 // Passive gold trickle (LoL-style): once a champion has been in the match past the start

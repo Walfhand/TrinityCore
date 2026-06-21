@@ -63,6 +63,12 @@ NFIELDS = 234
 CUSTOM_SPELLS = [
     {"id": 900200, "ref": 686,   "name": "Decharge instable", "cd": 3000,   # Shadow Bolt: shadow nuke
      "desc": "Lance une decharge d'ombre instable. Degats accrus par votre Instabilite."},
+    {"id": 900208, "ref": 6603, "name": "Trait d'entropie", "cd": 0, "icon": 3376,
+     "target": 6, "range": 3, "effect1": 3,
+     "desc": "Commande l'attaque de base a distance du Sorcier."},
+    {"id": 900209, "ref": 44425, "name": "Trait d'entropie visuel", "cd": 0, "icon": 3376,
+     "range": 3, "learn": False,
+     "desc": "Projectile visuel de l'attaque de base du Sorcier."},
     {"id": 900201, "ref": 30283, "name": "Faille d'entropie", "cd": 8000, "duration": 39,  # Shadowfury clone; clear its stun aura
      "effect2": 0, "effect_mechanic2": 0, "aura2": 0, "basepoints2": 0, "target2": 0, "radius2": 0,
      "desc": "Skillshot au sol : degats de zone + ralentissement. Degats accrus par l'Instabilite."},
@@ -205,6 +211,8 @@ def build_skilllineability_dbc(base_bytes):
         return serialize_dbc(fc, rs, rows, strblock)
 
     for c in CUSTOM_SPELLS:
+        if c.get("learn") is False:
+            continue
         max_id += 1
         row = bytearray(template)
         set_field(row, F_SLA_ID, max_id)

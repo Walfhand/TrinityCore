@@ -9,6 +9,7 @@
 #include "moba_match_mgr.h"
 
 #include "MobaSorcier.h"
+#include "MobaProgression.h"
 #include "Cell.h"
 #include "CellImpl.h"
 #include "GridNotifiers.h"
@@ -117,6 +118,80 @@ public:
         {
             OnEffectHitTarget += SpellEffectFn(script_impl::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
             AfterCast += SpellCastFn(script_impl::HandleAfterCast);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override { return new script_impl(); }
+};
+
+// Basic attack - Trait d'entropie: spellbook/action-bar command that starts the ranged auto-attack.
+// The actual visible shot and white damage are driven by MobaProgression's auto-attack timer.
+class spell_moba_entropy_basic_attack : public SpellScriptLoader
+{
+public:
+    spell_moba_entropy_basic_attack() : SpellScriptLoader("spell_moba_entropy_basic_attack") { }
+
+    class script_impl : public SpellScript
+    {
+        PrepareSpellScript(script_impl);
+
+        SpellCastResult CheckCast()
+        {
+            Player* caster = GetCaster()->ToPlayer();
+            Unit* target = GetExplTargetUnit();
+            if (!caster || !target || !caster->IsValidAttackTarget(target))
+                return SPELL_FAILED_BAD_TARGETS;
+
+            if (!caster->IsWithinDistInMap(target, Moba::MobaSorcierAutoAttackRange))
+                return SPELL_FAILED_OUT_OF_RANGE;
+
+            if (!caster->IsWithinLOSInMap(target, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2))
+                return SPELL_FAILED_LINE_OF_SIGHT;
+
+            return SPELL_CAST_OK;
+        }
+
+        void HandleCommand(SpellEffIndex effIndex)
+        {
+            PreventHitDefaultEffect(effIndex);
+
+            Player* caster = GetCaster()->ToPlayer();
+            Unit* target = GetHitUnit();
+            if (!caster || !target || !caster->IsValidAttackTarget(target))
+                return;
+
+            Moba::StartChampionRangedAutoAttack(caster, target);
+        }
+
+        void Register() override
+        {
+            OnCheckCast += SpellCheckCastFn(script_impl::CheckCast);
+            OnEffectHitTarget += SpellEffectFn(script_impl::HandleCommand, EFFECT_0, SPELL_EFFECT_DUMMY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override { return new script_impl(); }
+};
+
+// Visual missile for the Sorcier basic attack. The server-side white hit is applied by
+// MobaProgression; this spell only exists so the client can render a projectile.
+class spell_moba_entropy_basic_attack_visual : public SpellScriptLoader
+{
+public:
+    spell_moba_entropy_basic_attack_visual() : SpellScriptLoader("spell_moba_entropy_basic_attack_visual") { }
+
+    class script_impl : public SpellScript
+    {
+        PrepareSpellScript(script_impl);
+
+        void PreventDamage(SpellEffIndex effIndex)
+        {
+            PreventHitDefaultEffect(effIndex);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(script_impl::PreventDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
         }
     };
 
@@ -301,6 +376,8 @@ public:
 void AddSC_moba_sorcier_spells()
 {
     new spell_moba_entropy_bolt();
+    new spell_moba_entropy_basic_attack();
+    new spell_moba_entropy_basic_attack_visual();
     new spell_moba_entropy_rift();
     new spell_moba_void_step();
     new spell_moba_cataclysm();

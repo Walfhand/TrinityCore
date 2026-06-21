@@ -85,6 +85,8 @@ bool BlocksSpellWithoutLineOfSight(Unit* caster, SpellInfo const* spellInfo, Uni
 
 // Handles Sorcier's MOBA ranged basic attack from the normal right-click attack loop. Returns true
 // when the vanilla melee swing should be suppressed, even if the ranged attack is waiting on timer.
+bool UsesChampionRangedAutoAttack(Player const* player);
+bool StartChampionRangedAutoAttack(Player* player, Unit* victim);
 bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg);
 
 // Periodic ticks (driven once per world update by a thin script hook).

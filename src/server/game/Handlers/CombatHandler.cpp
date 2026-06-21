@@ -21,6 +21,7 @@
 #include "CreatureAI.h"
 #include "DBCStructure.h"
 #include "Log.h"
+#include "MobaProgression.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Vehicle.h"
@@ -58,7 +59,8 @@ void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing& pa
         }
     }
 
-    _player->Attack(enemy, true);
+    if (!Moba::StartChampionRangedAutoAttack(_player, enemy))
+        _player->Attack(enemy, true);
 }
 
 void WorldSession::HandleAttackStopOpcode(WorldPackets::Combat::AttackStop& /*packet*/)

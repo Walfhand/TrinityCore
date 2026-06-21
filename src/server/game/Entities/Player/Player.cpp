@@ -1003,64 +1003,68 @@ void Player::Update(uint32 p_time)
 
     m_achievementMgr->UpdateTimedAchievements(p_time);
 
-    if (HasUnitState(UNIT_STATE_MELEE_ATTACKING) && !HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_CHARGING))
+    if ((HasUnitState(UNIT_STATE_MELEE_ATTACKING) || Moba::UsesChampionRangedAutoAttack(this)) &&
+        !HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_CHARGING))
     {
         if (Unit* victim = GetVictim())
         {
-            // default combat reach 10
-            /// @todo add weapon, skill check
-
-            if (isAttackReady(BASE_ATTACK))
+            if (!Moba::HandleChampionRangedAutoAttack(this, victim, m_swingErrorMsg))
             {
-                if (!IsWithinMeleeRange(victim))
+                // default combat reach 10
+                /// @todo add weapon, skill check
+
+                if (isAttackReady(BASE_ATTACK))
                 {
-                    setAttackTimer(BASE_ATTACK, 100);
-                    if (m_swingErrorMsg != 1)               // send single time (client auto repeat)
+                    if (!IsWithinMeleeRange(victim))
                     {
-                        SendAttackSwingNotInRange();
-                        m_swingErrorMsg = 1;
+                        setAttackTimer(BASE_ATTACK, 100);
+                        if (m_swingErrorMsg != 1)               // send single time (client auto repeat)
+                        {
+                            SendAttackSwingNotInRange();
+                            m_swingErrorMsg = 1;
+                        }
+                    }
+                    //120 degrees of radiant range
+                    else if (!HasInArc(2 * float(M_PI) / 3, victim))
+                    {
+                        setAttackTimer(BASE_ATTACK, 100);
+                        if (m_swingErrorMsg != 2)               // send single time (client auto repeat)
+                        {
+                            SendAttackSwingBadFacingAttack();
+                            m_swingErrorMsg = 2;
+                        }
+                    }
+                    else
+                    {
+                        m_swingErrorMsg = 0;                    // reset swing error state
+
+                        // prevent base and off attack in same time, delay attack at 0.2 sec
+                        if (haveOffhandWeapon())
+                            if (getAttackTimer(OFF_ATTACK) < ATTACK_DISPLAY_DELAY)
+                                setAttackTimer(OFF_ATTACK, ATTACK_DISPLAY_DELAY);
+
+                        // do attack
+                        AttackerStateUpdate(victim, BASE_ATTACK);
+                        resetAttackTimer(BASE_ATTACK);
                     }
                 }
-                //120 degrees of radiant range
-                else if (!HasInArc(2 * float(M_PI) / 3, victim))
+
+                if (haveOffhandWeapon() && isAttackReady(OFF_ATTACK))
                 {
-                    setAttackTimer(BASE_ATTACK, 100);
-                    if (m_swingErrorMsg != 2)               // send single time (client auto repeat)
+                    if (!IsWithinMeleeRange(victim))
+                        setAttackTimer(OFF_ATTACK, 100);
+                    else if (!HasInArc(2 * float(M_PI) / 3, victim))
+                        setAttackTimer(OFF_ATTACK, 100);
+                    else
                     {
-                        SendAttackSwingBadFacingAttack();
-                        m_swingErrorMsg = 2;
+                        // prevent base and off attack in same time, delay attack at 0.2 sec
+                        if (getAttackTimer(BASE_ATTACK) < ATTACK_DISPLAY_DELAY)
+                            setAttackTimer(BASE_ATTACK, ATTACK_DISPLAY_DELAY);
+
+                        // do attack
+                        AttackerStateUpdate(victim, OFF_ATTACK);
+                        resetAttackTimer(OFF_ATTACK);
                     }
-                }
-                else
-                {
-                    m_swingErrorMsg = 0;                    // reset swing error state
-
-                    // prevent base and off attack in same time, delay attack at 0.2 sec
-                    if (haveOffhandWeapon())
-                        if (getAttackTimer(OFF_ATTACK) < ATTACK_DISPLAY_DELAY)
-                            setAttackTimer(OFF_ATTACK, ATTACK_DISPLAY_DELAY);
-
-                    // do attack
-                    AttackerStateUpdate(victim, BASE_ATTACK);
-                    resetAttackTimer(BASE_ATTACK);
-                }
-            }
-
-            if (haveOffhandWeapon() && isAttackReady(OFF_ATTACK))
-            {
-                if (!IsWithinMeleeRange(victim))
-                    setAttackTimer(OFF_ATTACK, 100);
-                else if (!HasInArc(2 * float(M_PI) / 3, victim))
-                    setAttackTimer(OFF_ATTACK, 100);
-                else
-                {
-                    // prevent base and off attack in same time, delay attack at 0.2 sec
-                    if (getAttackTimer(BASE_ATTACK) < ATTACK_DISPLAY_DELAY)
-                        setAttackTimer(BASE_ATTACK, ATTACK_DISPLAY_DELAY);
-
-                    // do attack
-                    AttackerStateUpdate(victim, OFF_ATTACK);
-                    resetAttackTimer(OFF_ATTACK);
                 }
             }
 

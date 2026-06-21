@@ -34,6 +34,9 @@ inline constexpr uint32 SpellEntropyMark = 900204;           // stacking mark au
 inline constexpr uint32 SpellEntropySlow = 900205;           // shared slow debuff applied by W/E
 inline constexpr uint32 SpellEntropyPassive = 900206;        // spellbook display entry for the mark passive
 inline constexpr uint32 SpellInstabilityPassive = 900207;    // spellbook display entry explaining the gauge
+inline constexpr uint32 SpellEntropyBasicAttack = 900208;    // spellbook/action-bar command for the ranged basic attack
+inline constexpr uint32 SpellEntropyBasicAttackVisual = 900209; // Arcane Barrage visual-only missile for the basic attack
+inline constexpr uint32 SpellEntropyBasicAttackVisualRef = 44425; // used for projectile speed/reference only
 
 void AddInstability(Player* player, uint32 amount);          // raise the gauge + refresh the no-decay grace
 uint32 GetInstability(Player const* player);                 // current gauge value (0..InstabilityMax)

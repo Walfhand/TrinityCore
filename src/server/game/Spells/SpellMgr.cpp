@@ -24,6 +24,7 @@
 #include "DBCStores.h"
 #include "Log.h"
 #include "Map.h"
+#include "MobaSorcier.h"
 #include "MotionMaster.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -5036,6 +5037,22 @@ void SpellMgr::LoadSpellInfoCorrections()
 
     if (LockEntry* entry = const_cast<LockEntry*>(sLockStore.LookupEntry(36))) // 3366 Opening, allows to open without proper key
         entry->Type[2] = LOCK_KEY_NONE;
+
+    // MOBA hook: the Sorcier ranged basic-attack visual missile (900209) is injected through the
+    // `spell_dbc` world table, which carries no Speed/SpellVisual columns. Server-side it therefore has
+    // Speed = 0 and SpellVisual[0] = 0, so the triggered visual cast fails Spell::IsNeedSendToClient()
+    // and no SMSG_SPELL_GO ever reaches the client -> no projectile is drawn. Copy the reference missile
+    // (Arcane Barrage 44425) Speed + visual onto it so the client renders the arcane bolt. Keep aligned
+    // with the client Spell.dbc clone built by tools/client-patch/build_patch.py.
+    ApplySpellFix({ Moba::Sorcier::SpellEntropyBasicAttackVisual }, [](SpellInfo* spellInfo)
+    {
+        if (SpellInfo const* ref = sSpellMgr->GetSpellInfo(Moba::Sorcier::SpellEntropyBasicAttackVisualRef))
+        {
+            spellInfo->Speed = ref->Speed;
+            spellInfo->SpellVisual[0] = ref->SpellVisual[0];
+            spellInfo->SpellVisual[1] = ref->SpellVisual[1];
+        }
+    });
 
     TC_LOG_INFO("server.loading", ">> Loaded SpellInfo corrections in {} ms", GetMSTimeDiffToNow(oldMSTime));
 }

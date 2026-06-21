@@ -134,6 +134,31 @@ entropy mark). The guard refuses the cast itself for champion harmful spells tar
 while allowing ranged auto-attacks (`IsAutoRepeatRangedSpell`) and beneficial spells. AoE spells also
 exclude structures from their target search in the spell scripts.
 
+### 13. `src/server/game/Handlers/CombatHandler.cpp` — `HandleAttackSwingOpcode`
+Right-click attack hook: `if (!Moba::StartChampionRangedAutoAttack(_player, enemy)) _player->Attack(enemy, true);`.
+(Also includes `#include "MobaProgression.h"`.)
+
+**Why:** ranged-auto-attack archetypes (Sorcier) must not start a vanilla melee swing on right-click.
+`StartChampionRangedAutoAttack` returns true for those champions (engaging a non-melee attack via
+`Attack(victim, false)`); for everyone else it returns false and the normal melee `Attack` runs.
+
+### 14. `src/server/game/Entities/Player/Player.cpp` — `Player::Update` (attack loop)
+The melee-swing block also runs when `Moba::UsesChampionRangedAutoAttack(this)` (not only on
+`UNIT_STATE_MELEE_ATTACKING`), and inside it `Moba::HandleChampionRangedAutoAttack(this, victim, m_swingErrorMsg)`
+gets first refusal: when it returns true the vanilla melee swing path is skipped entirely.
+
+**Why:** drives the Sorcier ranged basic attack from the normal attack timer (range/LOS/facing checks,
+then fires the 900209 visual missile and the delayed white hit) without ever doing a melee staff swing.
+
+### 15. `src/server/game/Spells/SpellMgr.cpp` — `LoadSpellInfoCorrections`
+`ApplySpellFix` on `Moba::Sorcier::SpellEntropyBasicAttackVisual` (900209): copies the reference missile
+(Arcane Barrage 44425) `Speed` and `SpellVisual[0/1]` onto it. (Also includes `#include "MobaSorcier.h"`.)
+
+**Why:** custom spells injected through the `spell_dbc` world table get no Speed/SpellVisual (no such
+columns), so the triggered visual cast fails `Spell::IsNeedSendToClient()` and no `SMSG_SPELL_GO` (no
+projectile) is sent. Setting a server-side Speed/visual makes the client draw the arcane bolt. Keep the
+values aligned with the client `Spell.dbc` clone in `tools/client-patch/build_patch.py`.
+
 ---
 
 ## Config (additive, low conflict risk)
@@ -151,7 +176,7 @@ custom-script hook; new MOBA script files are registered here.
 
 ## Maintenance checklist after a TrinityCore update
 
-1. Re-apply edits 1–8 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
+1. Re-apply edits 1–15 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
 2. New files under `src/server/game/Moba/` and `src/server/scripts/Custom/Moba/` need no
    action — `CollectSourceFiles` re-globs them automatically.
 3. Rebuild (`make image`) and re-import custom SQL if changed (`make db-custom`).
