@@ -22,62 +22,6 @@ namespace Moba
 Archetype const Archetypes[] =
 {
     {
-        "Briseur - bruiser melee (Rage)",
-        "Archetype Briseur applique.",
-        POWER_RAGE,
-        // Charge, Heroic Strike, Hamstring, Battle Shout, Thunder Clap
-        // + the 3 warrior stances (so abilities are usable) + Swords + Shield proficiency
-        { 100, 78, 1715, 6673, 6343, 2457, 71, 2458, 201, 9116, SPELL_MOBA_RAGE_GUARD, 0 },
-        { 2, 1, 3, 6, 4, 0, 7, 9, 0, 0, 5, 0 },
-        { 20977, 20984, 0 },                      // Recruit's Shortsword + Recruit's Shield (req level 1)
-        { SKILL_SWORDS, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
-        2457                                      // enter Battle Stance on pick
-    },
-    {
-        "Arcaniste - mage burst (Mana)",
-        "Archetype Arcaniste applique.",
-        POWER_MANA,
-        // Frostbolt, Fire Blast, Frost Nova, Blink + Staves proficiency
-        { 116, 2136, 122, 1953, 227, 0, 0, 0 },
-        { 1, 2, 3, 4, 0, 0, 0, 0 },
-        { 20978, 0, 0 },                          // Apprentice's Staff (req level 1)
-        { SKILL_STAVES, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
-        0
-    },
-    {
-        "Gardien - tank/support (Mana)",
-        "Archetype Gardien applique.",
-        POWER_MANA,
-        // Holy Light, Seal of Righteousness, Judgement, Devotion Aura, Hammer of Justice + Maces + Shield
-        { 635, 21084, 20271, 465, 853, 198, 9116, 0 },
-        { 1, 2, 3, 0, 4, 0, 0, 0 },
-        { 20981, 20984, 0 },                      // Neophyte's Mace + Recruit's Shield (req level 1)
-        { SKILL_MACES, SKILL_DEFENSE, SKILL_SHIELD, 0, 0, 0, 0, 0 },
-        0
-    },
-    {
-        "Assassin - melee burst (Energie)",
-        "Archetype Assassin applique.",
-        POWER_ENERGY,
-        // Sinister Strike, Eviscerate, Kick, Sprint, Stealth + Daggers proficiency
-        { 1752, 2098, 1766, 2983, 1784, 1180, 0, 0 },
-        { 1, 2, 4, 5, 3, 0, 0, 0 },
-        { 2092, 0, 0 },                           // Worn Dagger (req level 1)
-        { SKILL_DAGGERS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
-        0
-    },
-    {
-        "Rodeur - marksman distance (Mana)",
-        "Archetype Rodeur applique.",
-        POWER_MANA,
-        // Auto Shot, Arcane Shot, Concussive Shot, Multi-Shot, Hunter's Mark + Bows proficiency
-        { 75, 3044, 5116, 2643, 1130, 264, 0, 0 },
-        { 0, 1, 2, 4, 3, 0, 0, 0 },
-        { 20980, 0, 0 },                          // Warder's Shortbow (req level 1)
-        { SKILL_BOWS, SKILL_DEFENSE, 0, 0, 0, 0, 0, 0 },
-        0
-    },
-    {
         "Sorcier - mage d'entropie (Instabilite)",
         "Archetype Sorcier applique.",
         POWER_RAGE,                               // rage bar repurposed as the Instability gauge
@@ -94,19 +38,9 @@ std::size_t const ArchetypeCount = sizeof(Archetypes) / sizeof(Archetypes[0]);
 
 // Controlled combat stats per archetype, LoL-scaled. Order MUST match Archetypes[] above.
 // At MOBA level 18 the total equals base + 17 * growth (the LoL curve multiplier is 1.0 there).
-// Squishies (mage/marksman/assassin) are frailer with lower resistances; tank/bruiser get more.
+// Keep only validated archetypes here: prototype/vanilla kits stay out until they get custom tuning.
 ArchetypeStatCurve const ArchetypeStatCurves[] =
 {
-    // Briseur (bruiser)   HP                Armor          MagicRes      AttackPower    SpellPower   AtkTime
-    {                      640.f, 100.f,     34.f, 4.0f,    32.f, 1.5f,   130.f, 16.f,    8.f, 2.f,    1800 },
-    // Arcaniste (burst mage)
-    {                      560.f,  90.f,     20.f, 3.5f,    30.f, 1.3f,    55.f,  6.f,   30.f, 14.f,   2000 },
-    // Gardien (tank)
-    {                      680.f, 115.f,     38.f, 5.0f,    32.f, 2.05f,   85.f,  9.f,   12.f, 4.f,    2000 },
-    // Assassin
-    {                      600.f,  95.f,     28.f, 3.8f,    30.f, 1.3f,   140.f, 18.f,   10.f, 3.f,    1600 },
-    // Rodeur (marksman)
-    {                      580.f,  90.f,     26.f, 4.0f,    30.f, 1.3f,   175.f, 22.f,    6.f, 2.f,    1400 },
     // Sorcier (mage)
     {                      560.f,  88.f,     20.f, 3.5f,    30.f, 1.3f,    50.f,  5.f,   28.f, 13.f,   2000 },
 };

@@ -587,6 +587,25 @@ bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* targ
     return champ && champ->InBattleground();
 }
 
+bool BlocksSpellWithoutLineOfSight(Unit* caster, SpellInfo const* spellInfo, Unit* target)
+{
+    if (!caster || !target || !spellInfo || target == caster)
+        return false;
+
+    if (spellInfo->IsPositive())
+        return false;
+
+    Player* champ = caster->GetCharmerOrOwnerPlayerOrPlayerItself();
+    if (!champ || !champ->InBattleground())
+        return false;
+
+    MobaPlayerState const* state = GetPlayerState(champ);
+    if (!state || !state->ProgressInitialized)
+        return false;
+
+    return !target->IsWithinLOSInMap(caster, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2);
+}
+
 // Passive gold trickle (LoL-style): once a champion has been in the match past the start
 // delay, grant a fixed amount of gold every interval. Driven by a thin world-update hook.
 void UpdatePassiveGold(uint32 diff)

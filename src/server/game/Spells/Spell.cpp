@@ -5167,8 +5167,13 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* param1 /*= nullptr*/, uint
 
     // MOBA: champions cannot cast harmful spells on structures (towers/nexus); only auto-attacks damage them.
     if (Unit* casterUnit = m_caster->ToUnit())
-        if (Moba::BlocksSpellOnStructure(casterUnit, m_spellInfo, m_targets.GetUnitTarget()))
+    {
+        Unit* unitTarget = m_targets.GetUnitTarget();
+        if (Moba::BlocksSpellOnStructure(casterUnit, m_spellInfo, unitTarget))
             return SPELL_FAILED_BAD_TARGETS;
+        if (Moba::BlocksSpellWithoutLineOfSight(casterUnit, m_spellInfo, unitTarget))
+            return SPELL_FAILED_LINE_OF_SIGHT;
+    }
 
     // Prevent cheating in case the player has an immunity effect and tries to interact with a non-allowed gameobject. The error message is handled by the client so we don't report anything here
     if (m_caster->ToPlayer() && m_targets.GetGOTarget())

@@ -86,7 +86,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
 
     // MOBA mode runs its own matchmaking (custom blue/red balancing, dev-solo, 1v1 pop) instead
     // of the native BG queue. Delegate via a registered handler so core stays decoupled from scripts.
-    if (bgTypeId == BATTLEGROUND_MOBA && Moba::HandleBattlemasterJoin(_player))
+    if (Moba::IsMobaBattlemasterListId(bgTypeId) && Moba::HandleBattlemasterJoin(_player, bgTypeId))
         return;
 
     // get bg instance or bg template if instance not found

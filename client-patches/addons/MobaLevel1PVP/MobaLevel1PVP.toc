@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: MOBA Level 1 PvP
+## Notes: Allows the PvP/Battleground interface to open before vanilla level 10.
+## Author: MOBA
+## Version: 1.0
+
+MobaLevel1PVP.lua

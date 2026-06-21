@@ -14,7 +14,7 @@ class Player;
 // systems. Each archetype with a unique mechanic should get its own module like this one.
 namespace Moba::Sorcier
 {
-inline constexpr uint32 ArchetypeIndex = 5;                  // index into Moba::Archetypes[]
+inline constexpr uint32 ArchetypeIndex = 0;                  // index into Moba::Archetypes[]
 
 // Instability gauge (stored on the rage power bar; shown 0-100, internal 0-Max).
 inline constexpr uint32 InstabilityMax = 1000;

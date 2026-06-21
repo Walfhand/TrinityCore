@@ -13,6 +13,7 @@
 #include <vector>
 
 class Player;
+struct PvPDifficultyEntry;
 
 namespace Moba
 {
@@ -26,7 +27,7 @@ void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId);
 void ClearQueueStatuses(Player* player, BattlegroundQueueTypeId firstQueueId, BattlegroundQueueTypeId secondQueueId);
 
 bool HasActiveMatchState(Player* player);
-void QueueWaitingPlayer(Player* player);
+bool QueueWaitingPlayer(Player* player, BattlegroundQueueTypeId queueId, PvPDifficultyEntry const* bracketEntry);
 std::vector<Player*> TakeWaitingPlayers(uint32 count);
 std::vector<PlayerMatchAssignment> CreateMatch(std::vector<Player*> const& players, uint32 blueCount, uint32 instanceId, BattlegroundQueueTypeId queueId);
 void SetPlayerMatchState(Player* player, MatchState state);

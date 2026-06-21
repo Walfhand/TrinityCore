@@ -5,6 +5,7 @@
 #include "moba_shared.h"
 #include "moba_match_mgr.h"
 
+#include "MobaArchetypes.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "BattlegroundPackets.h"
@@ -46,7 +47,18 @@ void ClearPrototypeQueues(Player* player, PvPDifficultyEntry const* bracketEntry
 
 bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bgQueue, BattlegroundQueueTypeId bgQueueTypeId, PvPDifficultyEntry const* bracketEntry, PlayerMatchAssignment const& assignment)
 {
-    GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
+    GroupQueueInfo* ginfo = nullptr;
+    uint32 queueSlot = player->GetBattlegroundQueueIndex(bgQueueTypeId);
+    auto queuedPlayerItr = bgQueue.m_QueuedPlayers.find(player->GetGUID());
+    if (queuedPlayerItr != bgQueue.m_QueuedPlayers.end())
+        ginfo = queuedPlayerItr->second.GroupInfo;
+
+    if (!ginfo)
+    {
+        ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
+        queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
+    }
+
     if (!ginfo)
     {
         TC_LOG_ERROR("scripts", "MOBA match: AddGroup failed for {}", player->GetName());
@@ -58,7 +70,6 @@ bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bg
     ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
     ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
 
-    uint32 const queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
     if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
     {
         TC_LOG_ERROR("scripts", "MOBA match: no free queue slot for {}", player->GetName());
@@ -186,7 +197,9 @@ bool QueueMatchmaking(Player* player, PvPDifficultyEntry const* bracketEntry)
 
     uint32 const teamSize = GetConfiguredTeamSize();
 
-    QueueWaitingPlayer(player);
+    BattlegroundQueueTypeId const bgQueueTypeId = GetPrototypeQueueTypeId(bracketEntry);
+    if (!QueueWaitingPlayer(player, bgQueueTypeId, bracketEntry))
+        return false;
 
     std::vector<Player*> players = TakeWaitingPlayers(teamSize * 2);
     if (players.empty())
@@ -357,8 +370,23 @@ namespace
 // Called by the core battlemaster-join hook (via the MobaQueue seam) when a player queues for
 // the MOBA battleground from the standard BG list. Routes into our custom matchmaking instead
 // of the native queue: instant pop in dev-solo mode, otherwise normal 1v1+ matchmaking.
-void DispatchMobaBattlemasterJoin(Player* player)
+void DispatchMobaBattlemasterJoin(Player* player, uint32 battlemasterListId)
 {
+    if (player->InBattleground())
+    {
+        player->GetSession()->SendNotification("Tu es deja en match.");
+        return;
+    }
+
+    if (Moba::HasActiveMatchState(player) || player->InBattlegroundQueue())
+    {
+        player->GetSession()->SendNotification("Tu es deja en file MOBA. Quitte la file avant de changer d'archetype.");
+        return;
+    }
+
+    uint32 const archetypeIndex = Moba::GetArchetypeIndexForBattlemasterListId(battlemasterListId);
+    Moba::ApplyArchetype(player, Moba::Archetypes[archetypeIndex]);
+
     if (Moba::IsDevSoloModeEnabled())
         Moba::QueueDevSoloTest(player);
     else

@@ -207,7 +207,16 @@ bool HasActiveMatchState(Player* player)
         return false;
 
     if (IsWaitingRecord(itr->second))
+    {
+        if (itr->second.QueueId != BATTLEGROUND_QUEUE_NONE && player->GetBattlegroundQueueIndex(itr->second.QueueId) >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+        {
+            TC_LOG_INFO("scripts", "MOBA match: clearing stale waiting queue for player {}", player->GetName());
+            ClearPlayerMatch(player, "stale waiting queue");
+            return false;
+        }
+
         return true;
+    }
 
     if (player->InBattleground() || player->InBattlegroundQueue())
         return true;
@@ -217,20 +226,51 @@ bool HasActiveMatchState(Player* player)
     return false;
 }
 
-void QueueWaitingPlayer(Player* player)
+bool QueueWaitingPlayer(Player* player, BattlegroundQueueTypeId queueId, PvPDifficultyEntry const* bracketEntry)
 {
+    Battleground* bgTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_MOBA);
+    if (!bgTemplate)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: waiting queue failed, Guerilla template missing");
+        player->GetSession()->SendNotification("Erreur prototype : template BG MOBA introuvable.");
+        return false;
+    }
+
+    BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(queueId);
+    GroupQueueInfo* ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
+    if (!ginfo)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: waiting queue AddGroup failed for {}", player->GetName());
+        player->GetSession()->SendNotification("Erreur prototype : entree en file refusee.");
+        return false;
+    }
+
+    uint32 const queueSlot = player->AddBattlegroundQueueId(queueId);
+    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+    {
+        TC_LOG_ERROR("scripts", "MOBA match: waiting queue has no free queue slot for {}", player->GetName());
+        player->GetSession()->SendNotification("Erreur prototype : aucune file disponible.");
+        bgQueue.RemovePlayer(player->GetGUID(), false);
+        return false;
+    }
+
     uint64 const playerKey = GetPlayerKey(player);
     PlayerMatchRecord& playerRecord = PlayerMatches[playerKey];
     playerRecord.MatchId = 0;
     playerRecord.InstanceId = 0;
     playerRecord.TeamId = InvalidTeamId;
-    playerRecord.QueueId = BATTLEGROUND_QUEUE_NONE;
+    playerRecord.QueueId = queueId;
     playerRecord.State = MatchState::Queued;
 
     if (std::find(WaitingPlayers.begin(), WaitingPlayers.end(), playerKey) == WaitingPlayers.end())
         WaitingPlayers.push_back(playerKey);
 
+    WorldPackets::Battleground::BattlefieldStatusQueued queuedStatus;
+    BattlegroundMgr::BuildBattlegroundStatusQueued(&queuedStatus, bgTemplate, queueSlot, ginfo->JoinTime, queueId, bgQueue.GetAverageQueueWaitTime(ginfo));
+    player->SendDirectMessage(queuedStatus.Write());
+
     TC_LOG_INFO("scripts", "MOBA match: player {} queued for 1v1", player->GetName());
+    return true;
 }
 
 std::vector<Player*> TakeWaitingPlayers(uint32 count)
@@ -246,7 +286,7 @@ std::vector<Player*> TakeWaitingPlayers(uint32 count)
         uint64 const waitingKey = *itr;
         auto recordItr = PlayerMatches.find(waitingKey);
         Player* waiting = FindOnlinePlayer(waitingKey);
-        if (recordItr == PlayerMatches.end() || !IsWaitingRecord(recordItr->second) || !waiting || waiting->InBattleground() || waiting->InBattlegroundQueue())
+        if (recordItr == PlayerMatches.end() || !IsWaitingRecord(recordItr->second) || !waiting || waiting->InBattleground())
         {
             itr = WaitingPlayers.erase(itr);
 
@@ -255,6 +295,13 @@ std::vector<Player*> TakeWaitingPlayers(uint32 count)
             else if (recordItr != PlayerMatches.end())
                 PlayerMatches.erase(recordItr);
 
+            continue;
+        }
+
+        if (recordItr->second.QueueId == BATTLEGROUND_QUEUE_NONE || waiting->GetBattlegroundQueueIndex(recordItr->second.QueueId) >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+        {
+            itr = WaitingPlayers.erase(itr);
+            ClearPlayerMatch(waiting, "stale waiting queue");
             continue;
         }
 

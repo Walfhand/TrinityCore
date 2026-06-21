@@ -4188,7 +4188,7 @@ Moba.TeamSize = 1
 #        Default:     0 - (Disabled)
 #                     1 - (Enabled)
 
-Moba.DevSoloMode = 0
+Moba.DevSoloMode = 1
 
 #
 ###################################################################################################

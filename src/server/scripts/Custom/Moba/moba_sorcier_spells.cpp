@@ -14,6 +14,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Player.h"
+#include "SpellDefines.h"
 #include "SpellHistory.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -52,9 +53,10 @@ void CollectEnemies(Player* caster, WorldObject* center, float radius, std::list
     Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(center, out, check);
     Cell::VisitAllObjects(center, searcher, radius);
     // Structures (towers/nexus) are excluded: champion spells never damage them, only auto-attacks do.
-    out.remove_if([caster](Unit* u)
+    out.remove_if([caster, center](Unit* u)
     {
         return !u || !caster->IsValidAttackTarget(u)
+            || !center->IsWithinLOSInMap(u, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2)
             || Moba::IsTowerEntry(u->GetEntry()) || Moba::IsNexusEntry(u->GetEntry());
     });
 }
@@ -139,11 +141,25 @@ public:
         PrepareSpellScript(script_impl);
 
         // Structures are never valid targets for the AoE (no damage, no slow, no mark on towers/nexus).
-        void FilterStructures(std::list<WorldObject*>& targets)
+        // The destination and the caster must also have line of sight to avoid splashing through walls.
+        void FilterAreaTargets(std::list<WorldObject*>& targets)
         {
-            targets.remove_if([](WorldObject* obj)
+            Unit* caster = GetCaster();
+            WorldLocation const* dest = GetExplTargetDest();
+
+            targets.remove_if([caster, dest](WorldObject* obj)
             {
-                return obj && (Moba::IsTowerEntry(obj->GetEntry()) || Moba::IsNexusEntry(obj->GetEntry()));
+                if (!obj)
+                    return true;
+
+                if (Moba::IsTowerEntry(obj->GetEntry()) || Moba::IsNexusEntry(obj->GetEntry()))
+                    return true;
+
+                if (caster && !caster->IsWithinLOSInMap(obj, LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2))
+                    return true;
+
+                return dest && !obj->IsWithinLOS(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(),
+                    LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::M2);
             });
         }
 
@@ -175,7 +191,7 @@ public:
 
         void Register() override
         {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(script_impl::FilterStructures, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(script_impl::FilterAreaTargets, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
             OnEffectHitTarget += SpellEffectFn(script_impl::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
             AfterCast += SpellCastFn(script_impl::HandleAfterCast);
         }

@@ -234,14 +234,21 @@ Keep a generated copy at:
 
 The server-side `Map.dbc` must contain map ID `900` with directory `guerilla`, `InstanceType = 3` (`MAP_BATTLEGROUND`), and `AreaTableID = 9000`.
 
-Guerilla is exposed as battleground type `12` (`BATTLEGROUND_MOBA`) rather than using map id `900` as a BG type id. Keep these files aligned:
+Guerilla's real battleground type is `12` (`BATTLEGROUND_MOBA`) rather than map id `900`.
+The client BG interface exposes archetype-specific aliases `12..17`; the server maps all of
+them back to the real BG type `12` and uses the selected alias to force the archetype. Keep
+these files aligned:
 
 ```text
-docker/data/dbc/BattlemasterList.dbc  -> row ID 12, map 900, name Guerilla
+docker/data/dbc/BattlemasterList.dbc  -> rows 12..17, map 900, names MOBA - <Archetype>, min level 1
 docker/data/dbc/WorldSafeLocs.dbc     -> 900901 Blue start, 900902 Red start
 docker/data/dbc/PvpDifficulty.dbc     -> map 900 brackets, RangeIndex 0-15 only
 sql/custom/world/0005_guerilla_battleground_template.sql
 ```
+
+The stock 3.3.5 client also gates `TogglePVPFrame()` behind `SHOW_PVP_LEVEL` (vanilla level 10).
+The local addon `client-patches/addons/MobaLevel1PVP/` sets that gate to level 1 and is installed
+into the Docker client's `Interface/AddOns/MobaLevel1PVP/`.
 
 The cleanup SQL for the old dungeon-style template is tracked in:
 

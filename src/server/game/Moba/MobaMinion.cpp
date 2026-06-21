@@ -207,7 +207,8 @@ Unit* GetForcedTarget(Creature* minion)
     }
 
     Unit* target = ObjectAccessor::GetUnit(*minion, itr->second.ForcedTarget);
-    if (!target || !target->IsAlive() || !minion->IsValidAttackTarget(target) || !minion->IsWithinDistInMap(target, MinionChampionAggroAlertRange))
+    if (!target || !target->IsAlive() || !minion->IsValidAttackTarget(target) ||
+        !minion->IsWithinDistInMap(target, MinionChampionAggroAlertRange) || !minion->IsWithinLOSInMap(target))
     {
         itr->second.ForcedTarget.Clear();
         return nullptr;
@@ -311,7 +312,7 @@ void NotifyChampionAggro(Unit* attacker, Unit* victim)
         if (GetTeamIdForMinionEntry(minion->GetEntry()) != victimPlayer->GetBGTeam())
             continue;
 
-        if (minion->IsValidAttackTarget(attackingPlayer))
+        if (minion->IsValidAttackTarget(attackingPlayer) && minion->IsWithinLOSInMap(attackingPlayer))
             SetForcedTarget(minion, attackingPlayer);
     }
 }
@@ -328,7 +329,7 @@ Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
     // Validate the current target and remember its priority for target locking.
     uint32 currentPriority = 0;
     if (currentVictim && currentVictim->IsAlive() && minion->IsValidAttackTarget(currentVictim) &&
-        minion->IsWithinDistInMap(currentVictim, MinionLeashRange))
+        minion->IsWithinDistInMap(currentVictim, MinionLeashRange) && minion->IsWithinLOSInMap(currentVictim))
         currentPriority = GetTargetPriority(minion, currentVictim);
     else
         currentVictim = nullptr;
@@ -344,7 +345,8 @@ Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
 
     for (Unit* candidate : nearbyUnits)
     {
-        if (!candidate || candidate == minion || !candidate->IsAlive() || !minion->IsValidAttackTarget(candidate))
+        if (!candidate || candidate == minion || !candidate->IsAlive() || !minion->IsValidAttackTarget(candidate) ||
+            !minion->IsWithinLOSInMap(candidate))
             continue;
 
         uint32 const priority = GetTargetPriority(minion, candidate);

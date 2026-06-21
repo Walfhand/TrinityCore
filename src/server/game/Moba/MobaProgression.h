@@ -79,6 +79,10 @@ bool SuppressesNativeXp(Player const* player);
 // only damageable by auto-attacks. Ranged auto-attacks and beneficial spells are allowed. Core hook.
 bool BlocksSpellOnStructure(Unit* caster, SpellInfo const* spellInfo, Unit* target);
 
+// True if a champion's harmful MOBA spell targets a unit without line of sight. This deliberately
+// ignores cloned spell-row LOS skip flags inside MOBA matches.
+bool BlocksSpellWithoutLineOfSight(Unit* caster, SpellInfo const* spellInfo, Unit* target);
+
 // Periodic ticks (driven once per world update by a thin script hook).
 void UpdatePassiveGold(uint32 diff);
 void UpdateRespawns(uint32 diff);    // dead champions respawn at base after a level-scaled timer

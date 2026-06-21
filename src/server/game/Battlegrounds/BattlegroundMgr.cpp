@@ -42,6 +42,7 @@
 #include "Map.h"
 #include "MapManager.h"
 #include "MiscPackets.h"
+#include "MobaQueue.h"
 #include "SharedDefines.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
@@ -626,6 +627,8 @@ void BattlegroundMgr::SendBattlegroundList(Player* player, ObjectGuid const& gui
     if (!player)
         return;
 
+    BattlegroundTypeId const dataBgTypeId = Moba::GetCanonicalBattlegroundTypeId(bgTypeId);
+
     uint32 winner_kills = player->GetRandomWinner() ? sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_HONOR_LAST) : sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_HONOR_FIRST);
     uint32 winner_arena = player->GetRandomWinner() ? sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_ARENA_LAST) : sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_ARENA_FIRST);
     uint32 loser_kills = player->GetRandomWinner() ? sWorld->getIntConfig(CONFIG_BG_REWARD_LOSER_HONOR_LAST) : sWorld->getIntConfig(CONFIG_BG_REWARD_LOSER_HONOR_FIRST);
@@ -640,6 +643,12 @@ void BattlegroundMgr::SendBattlegroundList(Player* player, ObjectGuid const& gui
     battlefieldList.MinLevel = 0;
     battlefieldList.MaxLevel = 0;
 
+    if (Battleground* bgTemplate = GetBattlegroundTemplate(dataBgTypeId))
+    {
+        battlefieldList.MinLevel = bgTemplate->GetMinLevel();
+        battlefieldList.MaxLevel = bgTemplate->GetMaxLevel();
+    }
+
     battlefieldList.HasHolidayWinToday = player->GetRandomWinner();
     battlefieldList.HolidayWinHonorCurrencyBonus = winner_kills;
     battlefieldList.HolidayFirstWinArenaCurrencyBonus = winner_arena;
@@ -650,9 +659,9 @@ void BattlegroundMgr::SendBattlegroundList(Player* player, ObjectGuid const& gui
     battlefieldList.RandomFirstWinArenaCurrencyBonus = winner_arena;
     battlefieldList.RandomLossHonorCurrencyBonus = loser_kills;
 
-    if (bgTypeId != BATTLEGROUND_AA)
+    if (dataBgTypeId != BATTLEGROUND_AA)
     {
-        if (BattlegroundData const* battlegrounds = Trinity::Containers::MapGetValuePtr(bgDataStore, bgTypeId))
+        if (BattlegroundData const* battlegrounds = Trinity::Containers::MapGetValuePtr(bgDataStore, dataBgTypeId))
         {
             // expected bracket entry
             if (PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(battlegrounds->m_Battlegrounds.begin()->second->GetMapId(), player->GetLevel()))

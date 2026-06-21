@@ -66,27 +66,37 @@ it returns null and the "Enter" port silently fails.
 - `HandleBattlefieldLeaveOpcode`: the "no leave while in combat" guard also passes when
   `bg->GetTypeID() == BATTLEGROUND_MOBA` (champions are almost always in combat with minions,
   so the vanilla rule would make "Leave Arena" do nothing until the match ends).
-- `HandleBattlemasterJoinOpcode`: when `bgTypeId == BATTLEGROUND_MOBA`, delegate to
-  `Moba::HandleBattlemasterJoin(_player)` and return, bypassing the native queue. MOBA uses
-  its own matchmaking (custom blue/red teams, dev-solo, 1v1 pop); the native queue assigns
-  teams by faction and only pops when both sides reach `MinPlayersPerTeam`, so it never pops
-  for a MOBA match. The handler is registered by scripts via the `MobaQueue` seam.
+- `HandleBattlemasterJoinOpcode`: when `Moba::IsMobaBattlemasterListId(bgTypeId)`, delegate to
+  `Moba::HandleBattlemasterJoin(_player, bgTypeId)` and return, bypassing the native queue.
+  MOBA uses its own matchmaking (custom blue/red teams, dev-solo, 1v1 pop); the native queue
+  assigns teams by faction and only pops when both sides reach `MinPlayersPerTeam`, so it
+  never pops for a MOBA match. `bgTypeId` may be an archetype-specific client alias (`12..17`);
+  the registered script handler maps it to an archetype, applies that archetype, then queues
+  the real BG type `BATTLEGROUND_MOBA = 12`.
 
-### 6. `src/server/game/Entities/Object/Object.cpp` — `WorldObject::IsValidAttackTarget`
+### 6. `src/server/game/Battlegrounds/BattlegroundMgr.cpp` — MOBA BG-list aliases
+`SendBattlegroundList` canonicalizes MOBA alias ids (`12..17`) to the real BG type `12` when
+looking up active/template battleground data, while preserving the requested list id in the packet.
+It also fills `MinLevel`/`MaxLevel` from the canonical template instead of sending `0/0`.
+
+**Why:** the client BG interface can expose one visible queue entry per archetype at level 1, but
+all of those entries must still use the same server-side match implementation and instance list.
+
+### 7. `src/server/game/Entities/Object/Object.cpp` — `WorldObject::IsValidAttackTarget`
 Early-out guard: a player in a battleground cannot target a creature that is
 `Moba::IsOwnNexus(playerTeam, creatureEntry)`.
 
 **Why:** you must never be able to attack/target your own Nexus.
 (Also includes `#include "MobaRules.h"`.)
 
-### 7. `src/server/game/Entities/Unit/Unit.cpp` — `Unit::UpdateDisplayPower`
+### 8. `src/server/game/Entities/Unit/Unit.cpp` — `Unit::UpdateDisplayPower`
 Added `FORM_BATTLESTANCE` / `FORM_DEFENSIVESTANCE` / `FORM_BERSERKERSTANCE` to the cases
 that display `POWER_RAGE`.
 
 **Why:** the Briseur archetype uses warrior stances and the rage resource; without this
 the power bar can flip away from rage on stance change.
 
-### 8. `src/server/game/Entities/Player/Player.cpp` — `Player::RepopAtGraveyard`
+### 9. `src/server/game/Entities/Player/Player.cpp` — `Player::RepopAtGraveyard`
 Early-out guard at the top: if `Moba::BlocksGraveyardResurrect(this)` (a dead champion in an
 active MOBA match), call `SpawnCorpseBones()` (turns the corpse `BuildPlayerRepop` just created
 into non-reclaimable bones), clear `m_deathTimer`, remove `PLAYER_FLAGS_IS_OUT_OF_BOUNDS` and
@@ -98,7 +108,7 @@ min-height, so vanilla `RepopAtGraveyard` auto-resurrects the player on release 
 The guard lets a dead champion release into a free-roaming spectator ghost while reserving the
 only respawn to the level-scaled match timer (`Moba::UpdateRespawns`, respawns at the team base).
 
-### 9. `src/server/game/Handlers/MiscHandler.cpp` — `WorldSession::HandleReclaimCorpse`
+### 10. `src/server/game/Handlers/MiscHandler.cpp` — `WorldSession::HandleReclaimCorpse`
 Early-out guard after the `IsAlive()` check: if `Moba::BlocksGraveyardResurrect(_player)`, return.
 (Also includes `#include "MobaProgression.h"`.)
 
@@ -106,7 +116,7 @@ Early-out guard after the `IsAlive()` check: if `Moba::BlocksGraveyardResurrect(
 on its own corpse — letting the player reclaim it for an instant self-rez. This blocks that path so
 respawn stays governed only by the match timer.
 
-### 10. `src/server/game/Entities/Player/Player.cpp` — `Player::GiveXP`
+### 11. `src/server/game/Entities/Player/Player.cpp` — `Player::GiveXP`
 Early-out guard: if `Moba::SuppressesNativeXp(this)` (a champion in an active match), return before any
 native XP is applied. (Player.cpp already includes `#include "MobaProgression.h"`.)
 
@@ -114,7 +124,7 @@ native XP is applied. (Player.cpp already includes `#include "MobaProgression.h"
 from kills must not apply. We previously used `PLAYER_FLAGS_NO_XP_GAIN`, but that flag hides/locks the
 client XP bar, so it was invisible. This guard suppresses native XP without setting the flag.
 
-### 11. `src/server/game/Spells/Spell.cpp` — `Spell::CheckCast`
+### 12. `src/server/game/Spells/Spell.cpp` — `Spell::CheckCast`
 Early-out guard near the top: if `Moba::BlocksSpellOnStructure(casterUnit, m_spellInfo, m_targets.GetUnitTarget())`,
 return `SPELL_FAILED_BAD_TARGETS`. (Also includes `#include "MobaProgression.h"`.)
 
@@ -141,7 +151,7 @@ custom-script hook; new MOBA script files are registered here.
 
 ## Maintenance checklist after a TrinityCore update
 
-1. Re-apply edits 1–7 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
+1. Re-apply edits 1–8 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
 2. New files under `src/server/game/Moba/` and `src/server/scripts/Custom/Moba/` need no
    action — `CollectSourceFiles` re-globs them automatically.
 3. Rebuild (`make image`) and re-import custom SQL if changed (`make db-custom`).
