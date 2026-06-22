@@ -12,6 +12,7 @@
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "Log.h"
 #include "Map.h"
 #include "MobaRules.h"
 #include "ObjectAccessor.h"
@@ -42,6 +43,8 @@ struct TowerState
     uint32 ForcedTargetExpireMs = 0;
     uint32 RampStacks = 0;          // consecutive champion shots (tower-level; persists across switches)
     uint32 LastChampShotMs = 0;
+    ObjectGuid MuzzleGuid;          // invisible emitter at the tower top that casts the visible shot
+    ObjectGuid CurrentTarget;       // sticky target tracked here (NOT via Attack) so the building never rotates
 };
 
 std::unordered_map<uint64, TowerState> TowerStates;
@@ -49,6 +52,17 @@ std::unordered_map<uint64, TowerState> TowerStates;
 uint64 GetTowerKey(Creature const* tower)
 {
     return tower->GetGUID().GetCounter();
+}
+
+// The invisible emitter spawned at the tower top (null if it died/never spawned). Casting the visual
+// shot from it instead of the tower makes the projectile render and start from the tower's top.
+Creature* GetTowerMuzzle(Creature* tower)
+{
+    auto itr = TowerStates.find(GetTowerKey(tower));
+    if (itr == TowerStates.end() || itr->second.MuzzleGuid.IsEmpty())
+        return nullptr;
+
+    return ObjectAccessor::GetCreature(*tower, itr->second.MuzzleGuid);
 }
 
 uint32 GetUnitMobaTeam(Unit const* unit)
@@ -186,7 +200,7 @@ void ApplyTowerTuning(Creature* tower)
     TowerStates[GetTowerKey(tower)].Team = GetTeamIdForTowerEntry(tower->GetEntry());
 }
 
-void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const& pos)
+void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const& pos, float muzzleDz)
 {
     uint32 const entry = GetTowerEntry(teamId);
     if (!map || !entry)
@@ -207,9 +221,23 @@ void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const
     state.InstanceId = map->GetInstanceId();
     state.Lane = lane;
     state.Ord = ord;
+
+    // Tiny emitter at the tower top: building models carry no spell attachment point, so a shot cast
+    // by the tower itself renders no missile. This must remain a client-visible creature (not a
+    // CREATURE_FLAG_EXTRA_TRIGGER template), otherwise the client may not draw the caster->target missile.
+    Position const muzzlePos(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ() + muzzleDz, pos.GetOrientation());
+    if (TempSummon* muzzle = map->SummonCreature(NpcTowerMuzzle, muzzlePos, nullptr, 0))
+    {
+        muzzle->SetFaction(GetFactionForTeamId(teamId));
+        muzzle->SetReactState(REACT_PASSIVE);
+        muzzle->SetCanFly(true);
+        muzzle->SetDisableGravity(true);
+        muzzle->SetUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_UNINTERACTIBLE));
+        state.MuzzleGuid = muzzle->GetGUID();
+    }
 }
 
-Unit* SelectTowerTarget(Creature* tower, Unit* currentVictim)
+Unit* SelectTowerTarget(Creature* tower, Unit* /*currentVictim*/)
 {
     if (!tower || !IsTowerEntry(tower->GetEntry()))
         return nullptr;
@@ -219,11 +247,14 @@ Unit* SelectTowerTarget(Creature* tower, Unit* currentVictim)
         return forced;
 
     uint32 const towerTeam = GetTeamIdForTowerEntry(tower->GetEntry());
+    TowerState& state = TowerStates[GetTowerKey(tower)];
 
-    // Sticky: keep firing at the current target until it dies or leaves range.
-    if (currentVictim && currentVictim->IsAlive() && tower->IsValidAttackTarget(currentVictim) &&
-        tower->IsWithinDistInMap(currentVictim, MobaTowerRange))
-        return currentVictim;
+    // Sticky: keep firing at the tracked target until it dies or leaves range. The target is held in our
+    // own state (not via Unit::Attack), so the tower never sets UNIT_FIELD_TARGET and the building model
+    // does not rotate to face it.
+    if (Unit* sticky = state.CurrentTarget.IsEmpty() ? nullptr : ObjectAccessor::GetUnit(*tower, state.CurrentTarget))
+        if (sticky->IsAlive() && tower->IsValidAttackTarget(sticky) && tower->IsWithinDistInMap(sticky, MobaTowerRange))
+            return sticky;
 
     std::list<Unit*> nearbyUnits;
     Trinity::AnyUnitInObjectRangeCheck check(tower, MobaTowerRange);
@@ -252,6 +283,7 @@ Unit* SelectTowerTarget(Creature* tower, Unit* currentVictim)
         }
     }
 
+    state.CurrentTarget = bestTarget ? bestTarget->GetGUID() : ObjectGuid::Empty;
     return bestTarget;
 }
 
@@ -278,10 +310,20 @@ void TowerShoot(Creature* tower, Unit* target)
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(MobaTowerShotSpell);
 
-    // Flying bolt visual (0 damage so it neither double-hits nor "misses").
-    CastSpellExtraArgs args(true);
+    // Flying bolt visual (0 damage so it neither double-hits nor "misses"). Cast from the top-mounted
+    // emitter when present (building models render no missile from themselves); fall back to the tower.
+    Creature* visualCaster = GetTowerMuzzle(tower);
+    if (!visualCaster)
+        visualCaster = tower;
+    else
+        visualCaster->SetFacingToObject(target);
+
+    CastSpellExtraArgs args(TriggerCastFlags(TRIGGERED_FULL_MASK | TRIGGERED_IGNORE_TARGET_CHECK));
     args.AddSpellMod(SPELLVALUE_BASE_POINT0, 0);
-    tower->CastSpell(target, MobaTowerShotSpell, args);
+    SpellCastResult const visualResult = visualCaster->CastSpell(target, MobaTowerShotSpell, args);
+    if (visualResult != SPELL_CAST_OK)
+        TC_LOG_WARN("server", "MOBA tower visual spell {} failed from caster {} to target {} with result {}",
+            MobaTowerShotSpell, visualCaster->GetGUID().ToString(), target->GetGUID().ToString(), uint32(visualResult));
 
     // Apply the real (guaranteed) damage when the bolt reaches the target, matching its travel time.
     uint32 delayMs = 0;
@@ -327,8 +369,19 @@ void NotifyTowerAggro(Unit* attacker, Unit* victim)
 
 void ClearTowerState(Creature* tower)
 {
-    if (tower)
-        TowerStates.erase(GetTowerKey(tower));
+    if (!tower)
+        return;
+
+    auto itr = TowerStates.find(GetTowerKey(tower));
+    if (itr == TowerStates.end())
+        return;
+
+    // Take the invisible emitter down with the tower.
+    if (!itr->second.MuzzleGuid.IsEmpty())
+        if (Creature* muzzle = ObjectAccessor::GetCreature(*tower, itr->second.MuzzleGuid))
+            muzzle->DespawnOrUnsummon();
+
+    TowerStates.erase(itr);
 }
 
 bool IsTowerVulnerable(Creature const* tower)

@@ -47,6 +47,9 @@ enum Constants
     NpcRedMinionSiege = 900008,
     NpcBlueTower = 900010,
     NpcRedTower = 900011,
+    NpcTowerMuzzle = 900012,   // invisible emitter spawned at each tower's top: building models have no spell
+                               // attachment point, so the shot must be cast from a normal-model unit to render
+
     ActionJoinMatch = 1100,
     ActionJoinDevSolo = 1101,
     MapGmIsland = 1,
@@ -103,7 +106,8 @@ inline constexpr uint32 MobaTowerDamageVsChampion = 120;   // base damage; ramps
 inline constexpr float MobaTowerRampPerShot = 0.50f;       // +50% per consecutive shot on a champion (LoL)
 inline constexpr float MobaTowerRampMax = 1.50f;           // capped at +150% (250% total), i.e. 4 stacks
 inline constexpr uint32 MobaTowerRampResetMs = 5000;       // ramp resets 5s after the last champion hit
-inline constexpr uint32 MobaTowerShotSpell = 6353;         // Soul Fire: big flaming bolt, distinct from the minions' green Wrath (5176). Clean single-effect nuke (no DoT), projectile Speed 24
+inline constexpr uint32 MobaTowerShotSpell = 23675;        // Mini-cannon: direct target projectile (TARGET_UNIT_TARGET_ENEMY), visible missile, short cast time. Damage is still scripted in MobaTower.cpp.
+inline constexpr float MobaTowerMuzzleHeight = 9.0f;       // height of the invisible shot emitter above the tower base (tune per model)
 inline constexpr uint32 MobaNexusTowerLane = 9;            // lane id used for the nexus-guarding towers
 inline constexpr uint32 MobaStructureShieldSpell = 642;    // Divine Shield: golden bubble on invulnerable structures
 

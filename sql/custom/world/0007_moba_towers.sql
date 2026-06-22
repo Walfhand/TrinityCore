@@ -2,7 +2,7 @@
 -- HP/level/faction are tuned at runtime by the npc_moba_tower script; positions live in
 -- `moba_tower` (edit + `make db-custom` + restart, no C++ rebuild).
 
-DELETE FROM `creature_template` WHERE `entry` IN (900010, 900011);
+DELETE FROM `creature_template` WHERE `entry` IN (900010, 900011, 900012);
 INSERT INTO `creature_template`
 (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`,
  `modelid1`, `modelid2`, `modelid3`, `modelid4`, `name`, `subname`, `IconName`, `gossip_menu_id`,
@@ -16,7 +16,12 @@ INSERT INTO `creature_template`
 (900010, 0, 0, 0, 0, 0, 60001, 0, 0, 0, 'Blue Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 0.5, 0, 0,
  2000, 2000, 1, 1, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 'npc_moba_tower', NULL, 0),
 (900011, 0, 0, 0, 0, 0, 60002, 0, 0, 0, 'Red Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 0.8, 0, 0,
- 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 'npc_moba_tower', NULL, 0);
+ 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 'npc_moba_tower', NULL, 0),
+-- Tiny shot emitter: spawned at each tower's top by SpawnTower. It deliberately uses a real humanoid
+-- display (49) scaled down instead of an invisible model: missile visuals need a client-visible caster
+-- with normal attachment points. Runtime code still makes it passive/non-attackable.
+(900012, 0, 0, 0, 0, 0, 49, 0, 0, 0, 'Tower Muzzle', '', NULL, 0, 1, 1, 0, 35, 0, 1, 1.14286, 0.01, 0, 0,
+ 2000, 2000, 1, 1, 1, 33555202, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, '', NULL, 0);
 
 CREATE TABLE IF NOT EXISTS `moba_tower` (
     `mapId` INT UNSIGNED NOT NULL,
@@ -26,6 +31,17 @@ CREATE TABLE IF NOT EXISTS `moba_tower` (
     `x` FLOAT NOT NULL, `y` FLOAT NOT NULL, `z` FLOAT NOT NULL, `o` FLOAT NOT NULL DEFAULT 0,
     PRIMARY KEY (`mapId`, `team`, `lane`, `ord`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `moba_tower_muzzle` (
+    `team` TINYINT UNSIGNED NOT NULL,     -- 0 = Blue, 1 = Red
+    `dz`   FLOAT NOT NULL,                -- vertical offset from tower base to projectile emitter
+    PRIMARY KEY (`team`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DELETE FROM `moba_tower_muzzle`;
+INSERT INTO `moba_tower_muzzle` (`team`, `dz`) VALUES
+(0, 9.0),
+(1, 9.0);
 
 -- Positions added once scouted in-game (.gps), per team/lane in outer->inner order, plus nexus towers (lane 9).
 DELETE FROM `moba_tower` WHERE `mapId` = 900;

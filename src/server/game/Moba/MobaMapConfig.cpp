@@ -56,6 +56,22 @@ void LoadMobaMaps()
         } while (result->NextRow());
     }
 
+    // Per-team height of the invisible shot emitter above the tower base (tune in moba_tower_muzzle,
+    // no C++ rebuild). Defaults if the table is empty/missing a team.
+    float blueMuzzleDz = MobaTowerMuzzleHeight;
+    float redMuzzleDz = MobaTowerMuzzleHeight;
+    if (QueryResult result = WorldDatabase.Query("SELECT team, dz FROM moba_tower_muzzle"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            if (fields[0].GetUInt8() == 0)
+                blueMuzzleDz = fields[1].GetFloat();
+            else
+                redMuzzleDz = fields[1].GetFloat();
+        } while (result->NextRow());
+    }
+
     uint32 towers = 0;
     if (QueryResult result = WorldDatabase.Query("SELECT mapId, team, lane, ord, x, y, z, o FROM moba_tower ORDER BY mapId, team, lane, ord"))
     {
@@ -68,11 +84,13 @@ void LoadMobaMaps()
             if (itr == g_layouts.end())
                 continue;
 
+            bool const isBlue = fields[1].GetUInt8() == 0;
             TowerSpawn tower;
-            tower.Team = fields[1].GetUInt8() == 0 ? BlueTeamId : RedTeamId;
+            tower.Team = isBlue ? BlueTeamId : RedTeamId;
             tower.Lane = fields[2].GetUInt32();
             tower.Ord = fields[3].GetUInt32();
             tower.Pos = Position(fields[4].GetFloat(), fields[5].GetFloat(), fields[6].GetFloat(), fields[7].GetFloat());
+            tower.MuzzleDz = isBlue ? blueMuzzleDz : redMuzzleDz;
             itr->second.Towers.push_back(tower);
             ++towers;
         } while (result->NextRow());

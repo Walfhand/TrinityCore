@@ -74,7 +74,7 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
 
     SpawnNexuses();
     for (ArenaTower const& tower : _layout.Towers)
-        SpawnTower(_map, tower.Team, tower.Lane, tower.Ord, tower.Pos);
+        SpawnTower(_map, tower.Team, tower.Lane, tower.Ord, tower.Pos, tower.MuzzleDz);
 
     Seconds const firstWaveDelay = _lanes.empty() ? Seconds(30) : _lanes.front().FirstWaveDelay;
     _events.ScheduleEvent(EVENT_SPAWN_WAVE, firstWaveDelay);

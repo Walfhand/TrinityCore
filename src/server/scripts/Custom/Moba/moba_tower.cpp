@@ -27,6 +27,7 @@ public:
             // Tuning + REACT_PASSIVE: targeting is fully manual (League-style priority).
             Moba::ApplyTowerTuning(me);
             me->SetReactState(REACT_PASSIVE);
+            me->AttackStop();
             _shotTimer = 0;
             _shieldTimer = 0;
         }
@@ -70,17 +71,12 @@ public:
             }
             _shotTimer = Moba::MobaTowerAttackIntervalMs;
 
-            Unit* target = Moba::SelectTowerTarget(me, me->GetVictim());
+            // Stickiness is tracked inside SelectTowerTarget (in the tower's own state), NOT via Attack:
+            // a building model that gets a victim would rotate to face it, which looks wrong. The tower
+            // stays fixed; only the invisible emitter orients toward the target, so the shot still aims right.
+            Unit* target = Moba::SelectTowerTarget(me, nullptr);
             if (!target)
-            {
-                if (me->GetVictim())
-                    me->AttackStop();
                 return;
-            }
-
-            // Set the victim for stickiness/facing (ranged, no melee swing) and fire one shot.
-            if (target != me->GetVictim())
-                me->Attack(target, false);
 
             Moba::TowerShoot(me, target);
         }

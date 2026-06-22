@@ -17,7 +17,7 @@ namespace Moba
 {
 // Spawn + tune a tower for a team at a position (level 1, large HP pool, passive react state).
 // lane/ord drive the destruction order (gating): ord 0 = outer (destroyed first).
-void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const& pos);
+void SpawnTower(Map* map, uint32 teamId, uint32 lane, uint32 ord, Position const& pos, float muzzleDz);
 void ApplyTowerTuning(Creature* tower);
 
 // LoL gating: a lane tower is vulnerable once every more-outer tower on its lane is destroyed;

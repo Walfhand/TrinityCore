@@ -27,6 +27,7 @@ struct ArenaTower
     uint32 Lane = 0;
     uint32 Ord = 0;
     Position Pos;
+    float MuzzleDz = 9.0f;   // height of the invisible shot emitter above the tower base (per team)
 };
 
 struct ArenaLayout

@@ -20,6 +20,7 @@ struct TowerSpawn
     uint32 Lane = 0;       // lane index (0/1/2), or a special value for nexus towers
     uint32 Ord = 0;        // 0 = outermost (destroyed first), increasing toward the base
     Position Pos;
+    float MuzzleDz = 9.0f; // height of the invisible shot emitter above the tower base (per team, from moba_tower_muzzle)
 };
 
 struct MapLayout
