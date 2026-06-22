@@ -57,7 +57,7 @@ FRAMEXML_TOC_MPQ = os.path.join(CLIENT_FRFR, "patch-frFR-3.MPQ")
 FRAMEXML_TOC = "Interface\\FrameXML\\FrameXML.toc"
 FRAMEXML_DIR = os.path.join(ROOT, "client-patches", "framexml")
 # Custom FrameXML modules, in LOAD ORDER: the shared MobaUI core must load before the modules that use it.
-FRAMEXML_FILES = ["MobaUI.lua", "MobaLevel1PVP.lua", "MobaInstability.lua"]
+FRAMEXML_FILES = ["MobaUI.lua", "MobaLevel1PVP.lua", "MobaNoTalents.lua", "MobaInstability.lua"]
 
 # Character creation: disable ONLY the Death Knight (heroic class -> starts level 55 with runes, which breaks
 # the level-1 MOBA bracket). All other classes stay creatable. CharBaseInfo.dbc is a special byte-record DBC:

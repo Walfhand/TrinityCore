@@ -147,4 +147,5 @@ AnimationSystem.lua
 LocalizationPost.xml
 MobaUI.lua
 MobaLevel1PVP.lua
+MobaNoTalents.lua
 MobaInstability.lua
