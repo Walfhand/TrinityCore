@@ -46,10 +46,11 @@ MinionSpawn BuildMinionSpawn(uint32 spawnStreamId, uint32 teamId, MinionType typ
 {
     MinionSpawn spawn;
     spawn.SpawnStreamId = spawnStreamId;
+    spawn.FormationIndex = spawnIndex;
     spawn.TeamId = teamId;
     spawn.Type = type;
-    spawn.SpawnPosition = start;
     spawn.Path = path;
+    spawn.SpawnPosition = start;
     spawn.UpgradeLevel = upgradeLevel;
     spawn.Delay = Milliseconds(spawnIndex * MinionSpawnStepMs);
     return spawn;
@@ -63,13 +64,15 @@ void AppendMinionSpawns(std::vector<MinionSpawn>& spawns, uint32 spawnStreamId, 
         spawns.push_back(BuildMinionSpawn(spawnStreamId, teamId, type, start, path, upgradeLevel, spawnIndex++));
 }
 
-void SpawnLaneMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Position const& spawnPos, std::vector<Position> const& path, uint32 upgradeLevel)
+void SpawnLaneMinion(Map* map, uint32 instanceId, MinionSpawn const& spawn)
 {
+    uint32 const teamId = spawn.TeamId;
+    MinionType const type = spawn.Type;
     uint32 const entry = GetMinionEntry(teamId, type);
     if (!map || !entry)
         return;
 
-    TempSummon* minion = map->SummonCreature(entry, spawnPos, nullptr, 0);
+    TempSummon* minion = map->SummonCreature(entry, spawn.SpawnPosition, nullptr, 0);
     if (!minion)
     {
         TC_LOG_ERROR("bg.battleground", "MOBA: minion {} spawn failed in BG instance {}", entry, instanceId);
@@ -77,10 +80,10 @@ void SpawnLaneMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type
     }
 
     minion->SetFaction(GetFactionForTeamId(teamId));
-    uint32 const minionLevel = GetMinionLevelForUpgrade(upgradeLevel);
+    uint32 const minionLevel = GetMinionLevelForUpgrade(spawn.UpgradeLevel);
     RegisterMinionLevel(minion, minionLevel);
     ApplyMinionCombatTuning(minion, minionLevel);
-    RegisterMinionLanePath(minion, path);
+    RegisterMinionLanePath(minion, spawn.Path, spawn.SpawnStreamId, spawn.FormationIndex);
     ResumeMinionLaneMovement(minion);   // start walking the lane toward the first forward waypoint
 }
 
@@ -141,12 +144,10 @@ std::vector<MinionSpawn> BuildMinionWaveSpawns(LaneConfig const& lane, MinionWav
 
     // Blue walks the lane as authored (Blue->Red); Red walks it reversed (Red->Blue).
     std::vector<Position> bluePath = lane.Waypoints;
-    if (bluePath.empty())
-        bluePath.push_back(lane.BlueDestination);
+    bluePath.push_back(lane.BlueDestination);
 
     std::vector<Position> redPath(lane.Waypoints.rbegin(), lane.Waypoints.rend());
-    if (redPath.empty())
-        redPath.push_back(lane.RedDestination);
+    redPath.push_back(lane.RedDestination);
 
     spawns.reserve((plan.MeleeCount + plan.CasterCount + plan.SiegeCount) * 2);
     AppendTeamWaveSpawns(spawns, GetSpawnStreamId(laneIndex, BlueTeamId), BlueTeamId, lane.BlueSpawn, bluePath, plan);
@@ -157,6 +158,6 @@ std::vector<MinionSpawn> BuildMinionWaveSpawns(LaneConfig const& lane, MinionWav
 
 void SpawnMinion(Map* map, uint32 instanceId, MinionSpawn const& spawn)
 {
-    SpawnLaneMinion(map, instanceId, spawn.TeamId, spawn.Type, spawn.SpawnPosition, spawn.Path, spawn.UpgradeLevel);
+    SpawnLaneMinion(map, instanceId, spawn);
 }
 }

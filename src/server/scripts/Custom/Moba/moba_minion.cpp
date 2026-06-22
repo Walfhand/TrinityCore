@@ -20,8 +20,6 @@
 
 namespace
 {
-constexpr float CasterChaseDistance = 15.0f;       // distance a caster keeps from its target
-constexpr float CasterCastRange = 18.0f;           // max range a caster will poke from
 constexpr uint32 CasterCastIntervalMs = 1800;      // caster "auto-attack" cadence
 constexpr uint32 CasterMinionSpell = 5176;         // Wrath: nature bolt used as the ranged attack
 
@@ -88,7 +86,10 @@ public:
                 _targetCheckTimer -= diff;
 
             if (!me->GetVictim())
+            {
+                Moba::UpdateMinionLaneFlocking(me);
                 return;
+            }
 
             if (_type == Moba::MinionType::Caster)
                 CastAtVictim(diff);
@@ -126,12 +127,11 @@ public:
             if (target == me->GetVictim())
                 return;
 
-            // Casters poke from range; melee/siege close to melee range. We pass meleeAttack=false so the
-            // engine never runs its own auto-swing (which would play the shared, un-mutable weapon sound);
+            // We pass meleeAttack=false so the engine never runs its own auto-swing
+            // (which would play the shared, un-mutable weapon sound);
             // the swing is driven manually in MeleeAtVictim (silent damage + a sound-less attack emote).
-            bool const melee = _type != Moba::MinionType::Caster;
             if (me->Attack(target, false))
-                me->GetMotionMaster()->MoveChase(target, melee ? 0.0f : CasterChaseDistance);
+                Moba::MoveMinionToCombatTarget(me, target);
         }
 
         // Minion-specific silent melee: deal the configured weapon damage directly (no SMSG_ATTACKERSTATEUPDATE,
@@ -161,7 +161,7 @@ public:
             }
 
             Unit* victim = me->GetVictim();
-            if (victim && me->IsWithinDistInMap(victim, CasterCastRange) && me->IsWithinLOSInMap(victim))
+            if (victim && me->IsWithinDistInMap(victim, Moba::MinionCasterAttackRange) && me->IsWithinLOSInMap(victim))
             {
                 me->CastSpell(victim, CasterMinionSpell, true);
                 _castTimer = CasterCastIntervalMs;

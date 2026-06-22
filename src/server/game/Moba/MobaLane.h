@@ -40,6 +40,7 @@ struct MinionWavePlan
 struct MinionSpawn
 {
     uint32 SpawnStreamId = 0;
+    uint32 FormationIndex = 0;
     uint32 TeamId = InvalidTeamId;
     MinionType Type = MinionType::Melee;
     Position SpawnPosition;

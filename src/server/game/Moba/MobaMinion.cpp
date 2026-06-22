@@ -19,6 +19,7 @@
 #include "Unit.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <list>
 #include <unordered_map>
@@ -32,12 +33,26 @@ struct MinionState
 {
     std::vector<Position> Path;          // lane waypoints in this minion's travel order
     uint32 PathIndex = 0;                // current target waypoint; only ever increases (no backtracking)
+    uint32 SpawnStreamId = 0;            // lane/team stream used for wave spacing
+    uint32 FormationIndex = 0;           // order inside the wave for local spacing/chase slots
     ObjectGuid ForcedTarget;
     uint32 ForcedTargetExpireTime = 0;
+    uint32 NextFlockUpdateTime = 0;
     uint32 Level = MobaStartLevel;
 };
 
 constexpr float MinionWaypointArriveDist = 4.0f;   // distance at which a waypoint counts as reached
+constexpr float MinionLaneTargetRange = 16.0f;
+constexpr uint32 MinionFlockPointId = 0x4D0BAF10;
+constexpr uint32 MinionFlockUpdateMs = 450;
+constexpr float MinionFlockNeighborRange = 8.0f;
+constexpr float MinionFlockSeparationRange = 3.0f;
+constexpr float MinionFlockStepDistance = 5.0f;
+constexpr float MinionFlockPathWeight = 4.0f;
+constexpr float MinionFlockSeparationWeight = 4.5f;
+constexpr float MinionFlockAlignmentWeight = 0.6f;
+constexpr float MinionFlockCohesionWeight = 0.25f;
+constexpr float MinionFlockMinForwardDot = 0.25f;
 
 // Minions move a touch slower than champions (LoL: ~325 vs ~330-340 MS). Player run rate is 1.0
 // (7 yd/s), so 0.9 keeps minions just behind a champion who walks the lane with them.
@@ -58,6 +73,22 @@ struct MinionCombatTuning
 uint64 GetMinionKey(Creature const* minion)
 {
     return minion->GetGUID().GetCounter();
+}
+
+bool Normalize2d(float& x, float& y)
+{
+    float const length = std::sqrt(x * x + y * y);
+    if (length <= 0.0001f)
+        return false;
+
+    x /= length;
+    y /= length;
+    return true;
+}
+
+float Dot2d(float ax, float ay, float bx, float by)
+{
+    return ax * bx + ay * by;
 }
 
 uint32 ClampMinionLevel(uint32 level)
@@ -194,6 +225,108 @@ uint32 GetTargetPriority(Creature const* minion, Unit const* candidate)
     return 10;
 }
 
+float DistancePointToSegment2d(Unit const* unit, Position const& from, Position const& to)
+{
+    float const px = unit->GetPositionX();
+    float const py = unit->GetPositionY();
+    float const ax = from.GetPositionX();
+    float const ay = from.GetPositionY();
+    float const bx = to.GetPositionX();
+    float const by = to.GetPositionY();
+    float const vx = bx - ax;
+    float const vy = by - ay;
+    float const lenSq = vx * vx + vy * vy;
+
+    if (lenSq <= 0.0001f)
+    {
+        float const dx = px - ax;
+        float const dy = py - ay;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    float const t = std::clamp(((px - ax) * vx + (py - ay) * vy) / lenSq, 0.0f, 1.0f);
+    float const closestX = ax + vx * t;
+    float const closestY = ay + vy * t;
+    float const dx = px - closestX;
+    float const dy = py - closestY;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+float DistanceToLanePath2d(Unit const* unit, std::vector<Position> const& path)
+{
+    if (!unit || path.empty())
+        return std::numeric_limits<float>::max();
+
+    if (path.size() == 1)
+        return unit->GetExactDist2d(&path.front());
+
+    float nearest = std::numeric_limits<float>::max();
+    for (uint32 i = 1; i < path.size(); ++i)
+        nearest = std::min(nearest, DistancePointToSegment2d(unit, path[i - 1], path[i]));
+
+    return nearest;
+}
+
+bool IsUnitNearMinionLane(Creature const* minion, Unit const* unit, float range)
+{
+    if (!minion || !unit)
+        return false;
+
+    auto itr = MinionStates.find(GetMinionKey(minion));
+    if (itr == MinionStates.end() || itr->second.Path.empty())
+        return false;
+
+    return DistanceToLanePath2d(unit, itr->second.Path) <= range;
+}
+
+bool IsValidLaneTarget(Creature const* minion, Unit const* candidate)
+{
+    if (!IsUnitNearMinionLane(minion, candidate, MinionLaneTargetRange))
+        return false;
+
+    Creature const* candidateCreature = candidate ? candidate->ToCreature() : nullptr;
+    if (!candidateCreature || !IsMinionEntry(candidateCreature->GetEntry()))
+        return true;
+
+    auto minionItr = MinionStates.find(GetMinionKey(minion));
+    auto candidateItr = MinionStates.find(GetMinionKey(candidateCreature));
+    if (minionItr == MinionStates.end() || candidateItr == MinionStates.end())
+        return false;
+
+    return (minionItr->second.SpawnStreamId / 2u) == (candidateItr->second.SpawnStreamId / 2u);
+}
+
+bool IsSameLaneAlly(Creature const* minion, MinionState const& state, Creature const* other, MinionState const& otherState)
+{
+    if (!other || other == minion || !other->IsAlive() || !IsMinionEntry(other->GetEntry()))
+        return false;
+
+    if (GetTeamIdForMinionEntry(other->GetEntry()) != GetTeamIdForMinionEntry(minion->GetEntry()))
+        return false;
+
+    return (otherState.SpawnStreamId / 2u) == (state.SpawnStreamId / 2u);
+}
+
+bool GetLaneForward(Creature const* minion, MinionState const& state, float& x, float& y)
+{
+    if (!minion || state.Path.empty() || state.PathIndex >= state.Path.size())
+        return false;
+
+    Position const& wp = state.Path[state.PathIndex];
+    x = wp.GetPositionX() - minion->GetPositionX();
+    y = wp.GetPositionY() - minion->GetPositionY();
+    if (Normalize2d(x, y))
+        return true;
+
+    if (state.PathIndex + 1 >= state.Path.size())
+        return false;
+
+    Position const& next = state.Path[state.PathIndex + 1];
+    x = next.GetPositionX() - wp.GetPositionX();
+    y = next.GetPositionY() - wp.GetPositionY();
+    return Normalize2d(x, y);
+}
+
 Unit* GetForcedTarget(Creature* minion)
 {
     auto itr = MinionStates.find(GetMinionKey(minion));
@@ -208,7 +341,8 @@ Unit* GetForcedTarget(Creature* minion)
 
     Unit* target = ObjectAccessor::GetUnit(*minion, itr->second.ForcedTarget);
     if (!target || !target->IsAlive() || !minion->IsValidAttackTarget(target) ||
-        !minion->IsWithinDistInMap(target, MinionChampionAggroAlertRange) || !minion->IsWithinLOSInMap(target))
+        !minion->IsWithinDistInMap(target, MinionChampionAggroAlertRange) || !minion->IsWithinLOSInMap(target) ||
+        !IsValidLaneTarget(minion, target))
     {
         itr->second.ForcedTarget.Clear();
         return nullptr;
@@ -228,7 +362,7 @@ void SetForcedTarget(Creature* minion, Unit* target)
 }
 }
 
-void RegisterMinionLanePath(Creature* minion, std::vector<Position> const& path)
+void RegisterMinionLanePath(Creature* minion, std::vector<Position> const& path, uint32 spawnStreamId, uint32 formationIndex)
 {
     if (!minion || !IsMinionEntry(minion->GetEntry()))
         return;
@@ -236,6 +370,8 @@ void RegisterMinionLanePath(Creature* minion, std::vector<Position> const& path)
     MinionState& state = MinionStates[GetMinionKey(minion)];
     state.Path = path;
     state.PathIndex = 0;
+    state.SpawnStreamId = spawnStreamId;
+    state.FormationIndex = formationIndex;
 }
 
 void RegisterMinionLevel(Creature* minion, uint32 level)
@@ -329,7 +465,8 @@ Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
     // Validate the current target and remember its priority for target locking.
     uint32 currentPriority = 0;
     if (currentVictim && currentVictim->IsAlive() && minion->IsValidAttackTarget(currentVictim) &&
-        minion->IsWithinDistInMap(currentVictim, MinionLeashRange) && minion->IsWithinLOSInMap(currentVictim))
+        minion->IsWithinDistInMap(currentVictim, MinionLeashRange) && minion->IsWithinLOSInMap(currentVictim) &&
+        IsValidLaneTarget(minion, currentVictim))
         currentPriority = GetTargetPriority(minion, currentVictim);
     else
         currentVictim = nullptr;
@@ -346,7 +483,7 @@ Unit* SelectMinionTarget(Creature* minion, Unit* currentVictim)
     for (Unit* candidate : nearbyUnits)
     {
         if (!candidate || candidate == minion || !candidate->IsAlive() || !minion->IsValidAttackTarget(candidate) ||
-            !minion->IsWithinLOSInMap(candidate))
+            !minion->IsWithinLOSInMap(candidate) || !IsValidLaneTarget(minion, candidate))
             continue;
 
         uint32 const priority = GetTargetPriority(minion, candidate);
@@ -394,6 +531,124 @@ void MoveMinionToCurrentWaypoint(Creature* minion, MinionState& state)
 }
 }
 
+bool UpdateMinionLaneFlocking(Creature* minion)
+{
+    if (!minion || !IsMinionEntry(minion->GetEntry()) || minion->GetVictim())
+        return false;
+
+    auto itr = MinionStates.find(GetMinionKey(minion));
+    if (itr == MinionStates.end() || itr->second.Path.empty())
+        return false;
+
+    MinionState& state = itr->second;
+    uint32 const now = GameTime::GetGameTimeMS();
+    if (now < state.NextFlockUpdateTime)
+        return false;
+
+    state.NextFlockUpdateTime = now + MinionFlockUpdateMs;
+    AdvanceMinionPath(minion, state);
+
+    float pathX = 0.0f;
+    float pathY = 0.0f;
+    if (!GetLaneForward(minion, state, pathX, pathY))
+        return false;
+
+    std::list<Unit*> nearbyUnits;
+    Trinity::AnyUnitInObjectRangeCheck check(minion, MinionFlockNeighborRange);
+    Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(minion, nearbyUnits, check);
+    Cell::VisitAllObjects(minion, searcher, MinionFlockNeighborRange);
+
+    uint32 neighbors = 0;
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+    float separationX = 0.0f;
+    float separationY = 0.0f;
+    float alignmentX = 0.0f;
+    float alignmentY = 0.0f;
+
+    for (Unit* nearby : nearbyUnits)
+    {
+        Creature const* other = nearby ? nearby->ToCreature() : nullptr;
+        if (!other)
+            continue;
+
+        auto otherItr = MinionStates.find(GetMinionKey(other));
+        if (otherItr == MinionStates.end() || !IsSameLaneAlly(minion, state, other, otherItr->second))
+            continue;
+
+        float dx = minion->GetPositionX() - other->GetPositionX();
+        float dy = minion->GetPositionY() - other->GetPositionY();
+        float const dist = std::sqrt(dx * dx + dy * dy);
+        if (dist <= 0.001f || dist > MinionFlockNeighborRange)
+            continue;
+
+        ++neighbors;
+        centerX += other->GetPositionX();
+        centerY += other->GetPositionY();
+
+        if (dist < MinionFlockSeparationRange)
+        {
+            float const pressure = (MinionFlockSeparationRange - dist) / MinionFlockSeparationRange;
+            separationX += (dx / dist) * pressure;
+            separationY += (dy / dist) * pressure;
+        }
+
+        float otherForwardX = 0.0f;
+        float otherForwardY = 0.0f;
+        if (GetLaneForward(other, otherItr->second, otherForwardX, otherForwardY))
+        {
+            alignmentX += otherForwardX;
+            alignmentY += otherForwardY;
+        }
+    }
+
+    if (!neighbors)
+        return false;
+
+    centerX = centerX / float(neighbors) - minion->GetPositionX();
+    centerY = centerY / float(neighbors) - minion->GetPositionY();
+    Normalize2d(centerX, centerY);
+    Normalize2d(separationX, separationY);
+    Normalize2d(alignmentX, alignmentY);
+
+    float steerX = pathX * MinionFlockPathWeight +
+        separationX * MinionFlockSeparationWeight +
+        alignmentX * MinionFlockAlignmentWeight +
+        centerX * MinionFlockCohesionWeight;
+    float steerY = pathY * MinionFlockPathWeight +
+        separationY * MinionFlockSeparationWeight +
+        alignmentY * MinionFlockAlignmentWeight +
+        centerY * MinionFlockCohesionWeight;
+
+    float const forwardDot = Dot2d(steerX, steerY, pathX, pathY);
+    if (forwardDot < MinionFlockMinForwardDot)
+    {
+        float const correction = MinionFlockMinForwardDot - forwardDot + MinionFlockPathWeight;
+        steerX += pathX * correction;
+        steerY += pathY * correction;
+    }
+
+    if (!Normalize2d(steerX, steerY))
+        return false;
+
+    minion->GetMotionMaster()->MovePoint(MinionFlockPointId,
+        minion->GetPositionX() + steerX * MinionFlockStepDistance,
+        minion->GetPositionY() + steerY * MinionFlockStepDistance,
+        minion->GetPositionZ());
+    return true;
+}
+
+void MoveMinionToCombatTarget(Creature* minion, Unit* target)
+{
+    if (!minion || !target || !IsMinionEntry(minion->GetEntry()))
+        return;
+
+    if (GetMinionType(minion->GetEntry()) == MinionType::Caster)
+        minion->GetMotionMaster()->MoveChase(target, ChaseRange(MinionCasterAttackRange));
+    else
+        minion->GetMotionMaster()->MoveChase(target);
+}
+
 void ResumeMinionLaneMovement(Creature* minion)
 {
     if (!minion || minion->GetVictim())
@@ -432,10 +687,6 @@ bool IsMinionOffLane(Creature const* minion)
     if (itr == MinionStates.end() || itr->second.Path.empty())
         return false;
 
-    float nearest = std::numeric_limits<float>::max();
-    for (Position const& wp : itr->second.Path)
-        nearest = std::min(nearest, minion->GetExactDist2d(&wp));
-
-    return nearest > MinionLaneLeashRange;
+    return DistanceToLanePath2d(minion, itr->second.Path) > MinionLaneLeashRange;
 }
 }

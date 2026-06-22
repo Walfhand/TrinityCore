@@ -62,8 +62,8 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
         lane.Name = "moba-lane";
         lane.BlueSpawn = waypoints.front();
         lane.RedSpawn = waypoints.back();
-        lane.BlueDestination = waypoints.back();
-        lane.RedDestination = waypoints.front();
+        lane.BlueDestination = layout.RedNexus;
+        lane.RedDestination = layout.BlueNexus;
         lane.Waypoints = waypoints;
         _lanes.push_back(lane);
     }
