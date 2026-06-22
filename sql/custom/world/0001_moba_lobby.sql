@@ -71,9 +71,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900001, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 60003, 0, 0, 0,
     'Blue Nexus', 'Prototype Win Condition', NULL, 0, 1, 1, 0,
-    14, 0, 1, 1.14286, 3, 0, 0,
+    14, 0, 1, 1.14286, 1, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -149,9 +149,9 @@ INSERT INTO `creature_template` (
     `ScriptName`, `StringId`, `VerifiedBuild`
 ) VALUES (
     900002, 0, 0, 0,
-    0, 0, 1484, 0, 0, 0,
+    0, 0, 60004, 0, 0, 0,
     'Red Nexus', 'Prototype Win Condition', NULL, 0, 1, 1, 0,
-    14, 0, 1, 1.14286, 3, 0, 0,
+    14, 0, 1, 1.14286, 1, 0, 0,
     2000, 2000, 1, 1, 1,
     0, 0, 0, 0, 7, 0,
     0, 0, 0, 0, 0, 0,
@@ -265,3 +265,11 @@ INSERT INTO `creature_template` (
     1, 0, 0, 0,
     'npc_moba_minion', NULL, 0
 );
+
+-- Building-model display info for the custom nexus displays (60003/60004). See 0007 note: the server
+-- validates modelid1 against creature_model_info. Generous reach so attackers hit the large structure.
+DELETE FROM `creature_model_info` WHERE `DisplayID` IN (60003, 60004);
+INSERT INTO `creature_model_info`
+(`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`) VALUES
+(60003, 4, 5, 2, 0),
+(60004, 4, 5, 2, 0);

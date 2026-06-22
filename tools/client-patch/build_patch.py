@@ -78,6 +78,29 @@ BATTLEMASTERLIST_MPQ = os.path.join(
     "WINDOWS_World of Warcraft 335a", "Data", "patch-4.MPQ")
 MOBA_BATTLEMASTER_IDS = {12}   # server BATTLEGROUND_MOBA = 12 (archetype aliases 13..17 are not DBC rows)
 
+# --- Structure building models (towers + nexus) ---------------------------
+# 3.3.5 has no "destructible building" creatures, and the nice tower/fortress models live only in
+# GameObjectDisplayInfo. To give our (creature-based) towers/nexus a real building look WITHOUT
+# rewriting the Unit-vs-Unit combat, we add custom CreatureModelData rows pointing at building .mdx
+# models, plus custom CreatureDisplayInfo rows. We CLONE existing tower rows so the bounding box /
+# combat reach stay identical to today's towers; only the model path + ids change.
+# These rows must exist on BOTH sides: the server (CreatureModelData bounding box + CreatureDisplayInfo
+# scale, read from docker/data/dbc) and the client (to render the model, shipped in the MPQ). So we
+# write the augmented DBCs back into docker/data/dbc (the shared source) and also ship them.
+# Idempotent: re-running strips our custom ids first. Set the creature_template.modelid1 to these display
+# ids in the SQL (0007_moba_towers.sql for towers, 0001_moba_lobby.sql for the nexus).
+STRUCT_MODELDATA_CLONE = 2466       # FlameTurret CreatureModelData row (current blue tower) to clone
+STRUCT_DISPLAY_CLONE = 19218        # current blue tower CreatureDisplayInfo row to clone
+CMD_MODELPATH_FIELD = 2             # CreatureModelData.ModelName (string offset)
+CDI_MODELID_FIELD = 1               # CreatureDisplayInfo.ModelID -> CreatureModelData.Id
+CUSTOM_STRUCTURES = [
+    # (displayId, modelDataId, model .mdx path)  -- .mdx (M2) only; .wmo does not render on a creature
+    (60001, 60001, r"World\Azeroth\Elwynn\Buildings\HumanGuardTower\HumanGuardTower.mdx"),        # blue tower
+    (60002, 60002, r"World\Azeroth\Stranglethorn\Buildings\TrollWatchTower\TrollWatchTower.mdx"),  # red tower
+    (60003, 60003, r"World\Expansion01\Doodads\Sunwell\Passivedoodads\Sunwell\Sunwell_Replica.mdx"),  # blue nexus
+    (60004, 60004, r"World\Expansion02\Doodads\Generic\Scourge\SC_Obelisk2.mdx"),                  # red nexus
+]
+
 # --- Spell.dbc field indices (3.3.5a, 0-based; see README) ---------------
 F_ID = 0
 F_CASTTIME = 28
@@ -326,6 +349,48 @@ def build_creature_display_dbc(base_bytes, display_ids):
     return serialize_dbc(fc, rs, rows, strblock)
 
 
+def inject_structure_dbcs():
+    """Add the custom tower/nexus building displays into docker/data/dbc (shared by server + client).
+
+    Writes the augmented CreatureModelData.dbc + CreatureDisplayInfo.dbc back into DBC_SRC so the
+    worldserver picks them up, and returns their paths for shipping in the MPQ. Idempotent.
+    """
+    cmd_path = os.path.join(DBC_SRC, "CreatureModelData.dbc")
+    cdi_path = os.path.join(DBC_SRC, "CreatureDisplayInfo.dbc")
+
+    # CreatureModelData: clone the turret row, swap id + model path.
+    rc, fc, rs, rows, strblock = parse_dbc(open(cmd_path, "rb").read())
+    custom_model_ids = {m for _, m, _ in CUSTOM_STRUCTURES}
+    rows = [r for r in rows if get_field(r, F_ID) not in custom_model_ids]
+    src = next((r for r in rows if get_field(r, F_ID) == STRUCT_MODELDATA_CLONE), None)
+    if src is None:
+        raise RuntimeError(f"CreatureModelData clone source {STRUCT_MODELDATA_CLONE} not found")
+    for _, model_id, path in CUSTOM_STRUCTURES:
+        row = bytearray(src)
+        set_field(row, F_ID, model_id)
+        set_field(row, CMD_MODELPATH_FIELD, add_string(strblock, path))
+        rows.append(row)
+        print(f"  CreatureModelData.dbc: +{model_id} {path}")
+    open(cmd_path, "wb").write(serialize_dbc(fc, rs, rows, strblock))
+
+    # CreatureDisplayInfo: clone the tower display row, swap id + model id.
+    rc, fc, rs, rows, strblock = parse_dbc(open(cdi_path, "rb").read())
+    custom_display_ids = {d for d, _, _ in CUSTOM_STRUCTURES}
+    rows = [r for r in rows if get_field(r, F_ID) not in custom_display_ids]
+    src = next((r for r in rows if get_field(r, F_ID) == STRUCT_DISPLAY_CLONE), None)
+    if src is None:
+        raise RuntimeError(f"CreatureDisplayInfo clone source {STRUCT_DISPLAY_CLONE} not found")
+    for display_id, model_id, _ in CUSTOM_STRUCTURES:
+        row = bytearray(src)
+        set_field(row, F_ID, display_id)
+        set_field(row, CDI_MODELID_FIELD, model_id)
+        rows.append(row)
+        print(f"  CreatureDisplayInfo.dbc: +{display_id} (model {model_id})")
+    open(cdi_path, "wb").write(serialize_dbc(fc, rs, rows, strblock))
+
+    return cmd_path, cdi_path
+
+
 def build_charbaseinfo_no_deathknight(base_bytes):
     """Drop the (race, Death Knight) rows so character creation offers every class EXCEPT Death Knight."""
     magic, rc, fc, rs, sbs = struct.unpack("<4siiii", base_bytes[:20])
@@ -366,6 +431,10 @@ def main():
     new_spell = build_spell_dbc(spell)
     new_sla = build_skilllineability_dbc(sla)
 
+    # Tower/nexus building models: augment the shared docker/data/dbc DBCs (server + client) FIRST, so the
+    # CreatureDisplayInfo we ship below already carries the custom structure rows.
+    cmd_src, _ = inject_structure_dbcs()
+
     # Silence the MOBA minions on whatever display(s) the SQL gives them: client-only, players unaffected.
     displays = minion_display_ids()
     print(f"  minion display ids from SQL: {sorted(displays)}")
@@ -382,6 +451,11 @@ def main():
     open(slapath, "wb").write(new_sla)
     open(csdpath, "wb").write(new_csd)
     open(cdipath, "wb").write(new_cdi)
+
+    # Ship CreatureModelData.dbc (now carrying the custom structure model rows) so the client can render
+    # the tower/nexus building models referenced by their displays.
+    cmdpath = os.path.join(stage, "CreatureModelData.dbc")
+    open(cmdpath, "wb").write(open(cmd_src, "rb").read())
 
     # Character creation -> every class except Death Knight.
     cbipath = os.path.join(stage, "CharBaseInfo.dbc")
@@ -417,6 +491,7 @@ def main():
         "DBFilesClient\\SkillLineAbility.dbc": slapath,
         "DBFilesClient\\CreatureSoundData.dbc": csdpath,
         "DBFilesClient\\CreatureDisplayInfo.dbc": cdipath,
+        "DBFilesClient\\CreatureModelData.dbc": cmdpath,
         CHARBASEINFO_DBC: cbipath,
     }
     for sound_path in MUTE_SOUND_FILES:

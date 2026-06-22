@@ -13,9 +13,9 @@ INSERT INTO `creature_template`
  `HealthModifier`, `ManaModifier`, `ArmorModifier`, `DamageModifier`, `ExperienceModifier`, `RacialLeader`,
  `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`,
  `ScriptName`, `StringId`, `VerifiedBuild`) VALUES
-(900010, 0, 0, 0, 0, 0, 19218, 0, 0, 0, 'Blue Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 2, 0, 0,
+(900010, 0, 0, 0, 0, 0, 60001, 0, 0, 0, 'Blue Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 0.5, 0, 0,
  2000, 2000, 1, 1, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 'npc_moba_tower', NULL, 0),
-(900011, 0, 0, 0, 0, 0, 10753, 0, 0, 0, 'Red Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 2, 0, 0,
+(900011, 0, 0, 0, 0, 0, 60002, 0, 0, 0, 'Red Tower', 'Prototype Turret', NULL, 0, 1, 1, 0, 14, 0, 1, 1.14286, 0.8, 0, 0,
  2000, 2000, 1, 1, 1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 'npc_moba_tower', NULL, 0);
 
 CREATE TABLE IF NOT EXISTS `moba_tower` (
@@ -59,3 +59,12 @@ INSERT INTO `moba_tower` (`mapId`, `team`, `lane`, `ord`, `x`, `y`, `z`, `o`) VA
 (900, 0, 9, 1, 3348.795410, 2006.367920, 4.662856, 1.809555),
 (900, 1, 9, 0, 3071.308350, 2277.433594, 6.319172, 5.389400),
 (900, 1, 9, 1, 3043.724121, 2262.382568, 1.652149, 4.819986);
+
+-- Building-model display info for the custom tower displays (60001/60002). The server validates
+-- creature_template.modelid1 against creature_model_info (bounding radius + combat reach), independent
+-- of the client DBC. Slightly larger reach than the old turret so attackers stop at the tower base.
+DELETE FROM `creature_model_info` WHERE `DisplayID` IN (60001, 60002);
+INSERT INTO `creature_model_info`
+(`DisplayID`, `BoundingRadius`, `CombatReach`, `Gender`, `DisplayID_Other_Gender`) VALUES
+(60001, 3, 4, 2, 0),
+(60002, 3, 4, 2, 0);
