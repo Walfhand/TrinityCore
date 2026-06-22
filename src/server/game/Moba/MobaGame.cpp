@@ -12,6 +12,9 @@
 #include "Player.h"
 #include "TemporarySummon.h"
 
+#include <algorithm>
+#include <utility>
+
 namespace Moba
 {
 namespace
@@ -49,6 +52,7 @@ void MatchController::Start(Map* map, ArenaLayout const& layout)
     // One LaneConfig per authored lane: minions spawn at the near-base end and follow the
     // path (Blue forward, Red reversed). Adding a lane = adding a waypoint list in the config.
     _lanes.clear();
+    _pendingMinionSpawns.clear();
     for (std::vector<Position> const& waypoints : layout.Lanes)
     {
         if (waypoints.empty())
@@ -94,6 +98,8 @@ void MatchController::Update(uint32 diff)
             _events.ScheduleEvent(EVENT_SPAWN_WAVE, GetWaveInterval(_elapsedMs));
         }
     }
+
+    ProcessPendingMinionSpawns();
 }
 
 uint32 MatchController::OnUnitKilled(Creature* creature, Player* killer)
@@ -121,7 +127,47 @@ void MatchController::SpawnWave()
 
     ++_waveNumber;
     MinionWavePlan const plan = PlanMinionWave(_waveNumber, _elapsedMs);
-    for (LaneConfig const& lane : _lanes)
-        SpawnMinionWave(_map, lane, _map->GetInstanceId(), plan);
+    for (uint32 laneIndex = 0; laneIndex < _lanes.size(); ++laneIndex)
+    {
+        LaneConfig const& lane = _lanes[laneIndex];
+        TC_LOG_INFO("bg.battleground", "MOBA: wave '{}' in BG instance {} (melee {}, caster {}, siege {}, upgrade {})",
+            lane.Name, _map->GetInstanceId(), plan.MeleeCount, plan.CasterCount, plan.SiegeCount, plan.UpgradeLevel);
+
+        for (MinionSpawn& spawn : BuildMinionWaveSpawns(lane, plan, laneIndex))
+            QueueMinionSpawn(std::move(spawn));
+    }
+
+    ProcessPendingMinionSpawns();
+}
+
+void MatchController::QueueMinionSpawn(MinionSpawn&& spawn)
+{
+    PendingMinionSpawn pending;
+    pending.DueElapsedMs = _elapsedMs + uint32(spawn.Delay.count());
+    pending.Spawn = std::move(spawn);
+    _pendingMinionSpawns.push_back(std::move(pending));
+}
+
+void MatchController::ProcessPendingMinionSpawns()
+{
+    if (!_map)
+        return;
+
+    uint32 const instanceId = _map->GetInstanceId();
+    std::vector<uint32> spawnedStreams;
+    auto itr = _pendingMinionSpawns.begin();
+    while (itr != _pendingMinionSpawns.end())
+    {
+        if (itr->DueElapsedMs > _elapsedMs
+            || std::find(spawnedStreams.begin(), spawnedStreams.end(), itr->Spawn.SpawnStreamId) != spawnedStreams.end())
+        {
+            ++itr;
+            continue;
+        }
+
+        SpawnMinion(_map, instanceId, itr->Spawn);
+        spawnedStreams.push_back(itr->Spawn.SpawnStreamId);
+        itr = _pendingMinionSpawns.erase(itr);
+    }
 }
 }

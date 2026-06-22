@@ -14,7 +14,6 @@
 #include "Unit.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace Moba
 {
@@ -30,50 +29,41 @@ constexpr uint32 MaxUpgrades = 30u;
 
 constexpr uint32 FirstSiegeWave = 3u;                // first siege leaves at 1:30 (wave 3)
 
-constexpr float LateralSpacing = 2.5f;               // spread inside a rank
-constexpr float RankSpacing = 4.0f;                  // gap between melee / caster / siege ranks
-
-struct LaneVectors
-{
-    float ForwardX = 0.0f;
-    float ForwardY = 0.0f;
-    float PerpX = 0.0f;
-    float PerpY = 0.0f;
-};
-
-LaneVectors ComputeLaneVectors(Position const& start, Position const& destination)
-{
-    float dx = destination.GetPositionX() - start.GetPositionX();
-    float dy = destination.GetPositionY() - start.GetPositionY();
-    float length = std::sqrt(dx * dx + dy * dy);
-
-    LaneVectors vectors;
-    if (length > 0.0f)
-    {
-        vectors.ForwardX = dx / length;
-        vectors.ForwardY = dy / length;
-        vectors.PerpX = -vectors.ForwardY;
-        vectors.PerpY = vectors.ForwardX;
-    }
-
-    return vectors;
-}
-
-Position ComputeRankPosition(Position const& start, LaneVectors const& vectors, float backDistance, float lateralOffset)
-{
-    // Ranks form behind the spawn (opposite the advance direction) and spread sideways.
-    return Position(
-        start.GetPositionX() - vectors.ForwardX * backDistance + vectors.PerpX * lateralOffset,
-        start.GetPositionY() - vectors.ForwardY * backDistance + vectors.PerpY * lateralOffset,
-        start.GetPositionZ(), start.GetOrientation());
-}
+constexpr uint32 MinionSpawnStepMs = 1000u;          // one visible server tick between minions
 
 uint32 GetMinionLevelForUpgrade(uint32 upgradeLevel)
 {
     return std::min<uint32>(MobaStartLevel + upgradeLevel, MobaMaxLevel);
 }
 
-void SpawnMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Position const& spawnPos, std::vector<Position> const& path, uint32 upgradeLevel)
+uint32 GetSpawnStreamId(uint32 laneIndex, uint32 teamId)
+{
+    return laneIndex * 2u + (teamId == RedTeamId ? 1u : 0u);
+}
+
+MinionSpawn BuildMinionSpawn(uint32 spawnStreamId, uint32 teamId, MinionType type, Position const& start,
+    std::vector<Position> const& path, uint32 upgradeLevel, uint32 spawnIndex)
+{
+    MinionSpawn spawn;
+    spawn.SpawnStreamId = spawnStreamId;
+    spawn.TeamId = teamId;
+    spawn.Type = type;
+    spawn.SpawnPosition = start;
+    spawn.Path = path;
+    spawn.UpgradeLevel = upgradeLevel;
+    spawn.Delay = Milliseconds(spawnIndex * MinionSpawnStepMs);
+    return spawn;
+}
+
+void AppendMinionSpawns(std::vector<MinionSpawn>& spawns, uint32 spawnStreamId, uint32 teamId, MinionType type, uint32 count,
+    Position const& start, std::vector<Position> const& path, uint32 upgradeLevel,
+    uint32& spawnIndex)
+{
+    for (uint32 i = 0; i < count; ++i)
+        spawns.push_back(BuildMinionSpawn(spawnStreamId, teamId, type, start, path, upgradeLevel, spawnIndex++));
+}
+
+void SpawnLaneMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Position const& spawnPos, std::vector<Position> const& path, uint32 upgradeLevel)
 {
     uint32 const entry = GetMinionEntry(teamId, type);
     if (!map || !entry)
@@ -94,31 +84,12 @@ void SpawnMinion(Map* map, uint32 instanceId, uint32 teamId, MinionType type, Po
     ResumeMinionLaneMovement(minion);   // start walking the lane toward the first forward waypoint
 }
 
-void SpawnRank(Map* map, uint32 instanceId, uint32 teamId, MinionType type, uint32 count, uint32 rankIndex,
-    Position const& start, LaneVectors const& vectors, std::vector<Position> const& path, uint32 upgradeLevel)
+void AppendTeamWaveSpawns(std::vector<MinionSpawn>& spawns, uint32 spawnStreamId, uint32 teamId, Position const& start, std::vector<Position> const& path, MinionWavePlan const& plan)
 {
-    if (!count)
-        return;
-
-    float const backDistance = rankIndex * RankSpacing;
-    for (uint32 i = 0; i < count; ++i)
-    {
-        float const lateralOffset = (float(i) - float(count - 1) / 2.0f) * LateralSpacing;
-        Position const pos = ComputeRankPosition(start, vectors, backDistance, lateralOffset);
-        SpawnMinion(map, instanceId, teamId, type, pos, path, upgradeLevel);
-    }
-}
-
-void SpawnTeamWave(Map* map, uint32 instanceId, uint32 teamId, Position const& start, std::vector<Position> const& path, MinionWavePlan const& plan)
-{
-    // Formation faces the lane's far end (enemy nexus) for the rank layout.
-    Position const& formationTarget = path.empty() ? start : path.back();
-    LaneVectors const vectors = ComputeLaneVectors(start, formationTarget);
-
-    // Melee leads, casters trail, the siege minion sits at the back of the wave.
-    SpawnRank(map, instanceId, teamId, MinionType::Melee, plan.MeleeCount, 0, start, vectors, path, plan.UpgradeLevel);
-    SpawnRank(map, instanceId, teamId, MinionType::Caster, plan.CasterCount, 1, start, vectors, path, plan.UpgradeLevel);
-    SpawnRank(map, instanceId, teamId, MinionType::Siege, plan.SiegeCount, 2, start, vectors, path, plan.UpgradeLevel);
+    uint32 spawnIndex = 0;
+    AppendMinionSpawns(spawns, spawnStreamId, teamId, MinionType::Melee, plan.MeleeCount, start, path, plan.UpgradeLevel, spawnIndex);
+    AppendMinionSpawns(spawns, spawnStreamId, teamId, MinionType::Siege, plan.SiegeCount, start, path, plan.UpgradeLevel, spawnIndex);
+    AppendMinionSpawns(spawns, spawnStreamId, teamId, MinionType::Caster, plan.CasterCount, start, path, plan.UpgradeLevel, spawnIndex);
 }
 }
 
@@ -164,13 +135,9 @@ Milliseconds GetWaveInterval(uint32 elapsedMs)
     return Milliseconds(20000);
 }
 
-void SpawnMinionWave(Map* map, LaneConfig const& lane, uint32 instanceId, MinionWavePlan const& plan)
+std::vector<MinionSpawn> BuildMinionWaveSpawns(LaneConfig const& lane, MinionWavePlan const& plan, uint32 laneIndex)
 {
-    if (!map)
-        return;
-
-    TC_LOG_INFO("bg.battleground", "MOBA: wave '{}' in BG instance {} (melee {}, caster {}, siege {}, upgrade {})",
-        lane.Name, instanceId, plan.MeleeCount, plan.CasterCount, plan.SiegeCount, plan.UpgradeLevel);
+    std::vector<MinionSpawn> spawns;
 
     // Blue walks the lane as authored (Blue->Red); Red walks it reversed (Red->Blue).
     std::vector<Position> bluePath = lane.Waypoints;
@@ -181,7 +148,15 @@ void SpawnMinionWave(Map* map, LaneConfig const& lane, uint32 instanceId, Minion
     if (redPath.empty())
         redPath.push_back(lane.RedDestination);
 
-    SpawnTeamWave(map, instanceId, BlueTeamId, lane.BlueSpawn, bluePath, plan);
-    SpawnTeamWave(map, instanceId, RedTeamId, lane.RedSpawn, redPath, plan);
+    spawns.reserve((plan.MeleeCount + plan.CasterCount + plan.SiegeCount) * 2);
+    AppendTeamWaveSpawns(spawns, GetSpawnStreamId(laneIndex, BlueTeamId), BlueTeamId, lane.BlueSpawn, bluePath, plan);
+    AppendTeamWaveSpawns(spawns, GetSpawnStreamId(laneIndex, RedTeamId), RedTeamId, lane.RedSpawn, redPath, plan);
+
+    return spawns;
+}
+
+void SpawnMinion(Map* map, uint32 instanceId, MinionSpawn const& spawn)
+{
+    SpawnLaneMinion(map, instanceId, spawn.TeamId, spawn.Type, spawn.SpawnPosition, spawn.Path, spawn.UpgradeLevel);
 }
 }

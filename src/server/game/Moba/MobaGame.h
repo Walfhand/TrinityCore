@@ -53,10 +53,19 @@ public:
 private:
     void SpawnNexuses();
     void SpawnWave();
+    void QueueMinionSpawn(MinionSpawn&& spawn);
+    void ProcessPendingMinionSpawns();
+
+    struct PendingMinionSpawn
+    {
+        uint32 DueElapsedMs = 0;
+        MinionSpawn Spawn;
+    };
 
     Map* _map = nullptr;
     ArenaLayout _layout;
     std::vector<LaneConfig> _lanes;
+    std::vector<PendingMinionSpawn> _pendingMinionSpawns;
     EventMap _events;
     uint32 _waveNumber = 0;
     uint32 _elapsedMs = 0;
