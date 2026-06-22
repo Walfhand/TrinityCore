@@ -299,6 +299,7 @@ public:
             return;
 
         Moba::AbandonPlayerMatch(player);
+        Moba::RevertToBlank(player);   // save a blank character: no kit visible on a later reconnect
     }
 
     void OnLogin(Player* player, bool /*firstLogin*/) override
@@ -307,6 +308,8 @@ public:
         // money) since the reloaded Player object lost the in-memory bonuses.
         if (player->InBattleground())
             Moba::ReapplyPlayerMatchState(player);
+        else
+            Moba::RevertToBlank(player);   // logging in outside a match = blank shell (no class-specific kit)
     }
 
     void OnMapChanged(Player* player) override
@@ -319,6 +322,7 @@ public:
         }
 
         Moba::AbandonPlayerMatch(player);
+        Moba::RevertToBlank(player);   // left the match -> strip the kit, back to a blank character
     }
 };
 
@@ -386,7 +390,8 @@ void DispatchMobaBattlemasterJoin(Player* player, uint32 battlemasterListId)
     }
 
     uint32 const archetypeIndex = Moba::GetArchetypeIndexForBattlemasterListId(battlemasterListId);
-    Moba::ApplyArchetype(player, Moba::Archetypes[archetypeIndex]);
+    // Record the archetype from the queue alias; the kit is applied on match entry, not now (stay blank).
+    Moba::SetPlayerArchetype(player, archetypeIndex);
 
     if (Moba::IsDevSoloModeEnabled())
         Moba::QueueDevSoloTest(player);

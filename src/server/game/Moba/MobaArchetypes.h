@@ -61,6 +61,9 @@ void MaxArchetypeSkills(Player* player, uint32 archetypeIndex);
 void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLevel, bool notify);
 void ResetForMatch(Player* player);
 void ClearArchetypeRuntime(Player const* player);   // drop any per-archetype runtime state on match cleanup
+// Strip everything archetype-specific so an OUT-OF-MATCH character is a blank shell (no kit spells, no
+// starter weapon, no custom resource, no match stats). The kit is re-applied on match entry.
+void RevertToBlank(Player* player);
 
 // Champion ranged auto-attack seam. The core combat hooks (CombatHandler / Player::Update) call these
 // generic entry points; they dispatch to the archetype that auto-attacks at range (currently only the

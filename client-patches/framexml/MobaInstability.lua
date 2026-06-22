@@ -1,10 +1,12 @@
 -- MOBA: fully custom Instability gauge bar for the Sorcier.
 -- Loaded via FrameXML (always on). NOT tied to any native power: the server pushes the gauge value (0-100)
--- as an addon message ("MOBAINST"). Standalone bar (default bottom-centre), movable via the shared MobaUI
--- system ("/moba ui"). Shown only for the Sorcier (detected by its entropy bolt in the spellbook).
+-- as an addon message ("MOBAINST"). Standalone bar (default bottom-centre), movable via "/moba ui".
 --
--- The whole body runs inside a pcall: this file is part of FrameXML, so an unhandled error would be a FATAL
--- client crash. On error the bar just does not appear (error stored in global MobaInstabilityError).
+-- Visibility rules (the champion's resource only shows when relevant):
+--   * The native player-frame power bar (the "wrong" default resource) is hidden for the Sorcier.
+--   * The Instability bar shows only IN A MATCH (a PvP instance) for the Sorcier; nothing in the lobby.
+--
+-- Wrapped in pcall: as a FrameXML file an unhandled error would be a FATAL crash; on error it no-ops.
 
 local ok, err = pcall(function()
 
@@ -74,11 +76,24 @@ local function DetectSorcier()
     end
 end
 
+local function InMatch()
+    local _, instanceType = IsInInstance()
+    return instanceType == "pvp" or instanceType == "arena"
+end
+
+-- Hide the native player-frame power bar (the default/"wrong" resource) for the Sorcier; restore otherwise.
+local function SetNativePowerHidden(hidden)
+    local a = hidden and 0 or 1
+    if PlayerFrameManaBar then PlayerFrameManaBar:SetAlpha(a) end
+    if PlayerFrameManaBarText then PlayerFrameManaBarText:SetAlpha(a) end
+end
+
 local function Refresh()
-    if placing or isSorcier then
-        SetPercent(lastPct)   -- visible while placing, or for the Sorcier (0 at the start)
+    SetNativePowerHidden(true)   -- champions never use the native resource bar: hide it everywhere
+    if placing or (isSorcier and InMatch()) then
+        SetPercent(lastPct)   -- the right resource, shown only in a match (or while placing)
     else
-        bar:Hide()            -- other archetypes keep their real resource bar
+        bar:Hide()
     end
 end
 
@@ -95,6 +110,7 @@ f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("SPELLS_CHANGED")
 f:RegisterEvent("LEARNED_SPELL_IN_TAB")
+f:RegisterEvent("UNIT_DISPLAYPOWER")
 f:RegisterEvent("CHAT_MSG_ADDON")
 f:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "CHAT_MSG_ADDON" then
@@ -108,7 +124,8 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
             local v = tonumber(body)
             if v then
                 isSorcier = true
-                SetPercent(v)
+                SetNativePowerHidden(true)
+                if InMatch() then SetPercent(v) end
             end
         end
         return

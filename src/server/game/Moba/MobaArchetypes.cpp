@@ -284,6 +284,19 @@ void ResetForMatch(Player* player)
     player->GetSpellHistory()->ResetAllCooldowns();
 }
 
+void RevertToBlank(Player* player)
+{
+    if (!player)
+        return;
+
+    // Out of a match the champion is an empty shell: nothing reveals which archetype it was.
+    RemovePlayerProgress(player);             // undo applied stats + match state + per-archetype runtime
+    WipeSpellbook(player);                    // 0 spells
+    ClearWeaponSlots(player);                 // unequip the starter weapon(s)
+    ApplyArchetypePower(player, POWER_MANA);  // neutral resource (the custom UI hides the bar out of match)
+    player->SetPower(POWER_MANA, 0);
+}
+
 void ClearArchetypeRuntime(Player const* player)
 {
     // Each archetype that keeps per-player runtime state clears it here (no-op if it has none).

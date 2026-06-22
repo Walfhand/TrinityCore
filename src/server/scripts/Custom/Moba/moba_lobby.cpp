@@ -61,7 +61,9 @@ public:
             if (archetypeIndex >= Moba::ArchetypeCount)
                 return true;
 
-            Moba::ApplyArchetype(player, Moba::Archetypes[archetypeIndex]);
+            // Only record the chosen archetype here; the character stays blank in the lobby. The kit is
+            // applied when the champion actually enters the match (see InitializePlayerMatchProgress).
+            Moba::SetPlayerArchetype(player, archetypeIndex);
             return true;
         }
     };

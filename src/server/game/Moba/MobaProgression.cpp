@@ -410,9 +410,18 @@ void SetPlayerArchetype(Player* player, uint32 archetypeIndex)
 
 void InitializePlayerMatchProgress(Player* player)
 {
+    // The archetype kit exists ONLY inside a match: never set it up until the champion is actually in the
+    // battleground (out of a match the character is a blank shell, see Moba::RevertToBlank).
+    if (!player || !player->InBattleground())
+        return;
+
     MobaPlayerState* state = GetPlayerState(player);
     if (!state || state->ProgressInitialized)
         return;
+
+    // Apply the full archetype kit now (spells, power, starter gear, level) — moved here from the lobby
+    // so picking/queuing only records the choice; the kit appears when you enter the match.
+    ApplyArchetype(player, Archetypes[state->ArchetypeIndex]);
 
     state->Level = MobaStartLevel;
     state->Xp = 0;
