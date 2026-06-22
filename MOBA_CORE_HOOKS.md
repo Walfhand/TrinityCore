@@ -62,17 +62,17 @@ port handler re-resolves the bracket from the player level on accept; without th
 it returns null and the "Enter" port silently fails.
 **Scope:** generic (all maps), but "clamp to nearest bracket" is sane default behavior.
 
-### 5. `src/server/game/Handlers/BattleGroundHandler.cpp` — two MOBA hooks
+### 5. `src/server/game/Handlers/BattleGroundHandler.cpp` — three MOBA hooks
 - `HandleBattlefieldLeaveOpcode`: the "no leave while in combat" guard also passes when
   `bg->GetTypeID() == BATTLEGROUND_MOBA` (champions are almost always in combat with minions,
   so the vanilla rule would make "Leave Arena" do nothing until the match ends).
-- `HandleBattlemasterJoinOpcode`: when `Moba::IsMobaBattlemasterListId(bgTypeId)`, delegate to
-  `Moba::HandleBattlemasterJoin(_player, bgTypeId)` and return, bypassing the native queue.
-  MOBA uses its own matchmaking (custom blue/red teams, dev-solo, 1v1 pop); the native queue
-  assigns teams by faction and only pops when both sides reach `MinPlayersPerTeam`, so it
-  never pops for a MOBA match. `bgTypeId` may be an archetype-specific client alias (`12..17`);
-  the registered script handler maps it to an archetype, applies that archetype, then queues
+- `HandleBattlemasterJoinOpcode`: **MOBA-only server.** When `Moba::IsMobaBattlemasterListId(bgTypeId)`,
+  delegate to `Moba::HandleBattlemasterJoin(_player, bgTypeId)` and return (bypassing the native queue);
+  for EVERY other `bgTypeId`, send `LANG_BG_DISABLED` and return — all non-MOBA battlegrounds are off.
+  MOBA uses its own matchmaking (custom blue/red teams, dev-solo, 1v1 pop). `bgTypeId` may be an
+  archetype-specific client alias (`12..17`); the registered script handler maps it to an archetype and queues
   the real BG type `BATTLEGROUND_MOBA = 12`.
+- `HandleBattlemasterJoinArena`: early-out `LANG_BG_DISABLED` + return at the top — arenas are disabled.
 
 ### 6. `src/server/game/Battlegrounds/BattlegroundMgr.cpp` — MOBA BG-list aliases
 `SendBattlegroundList` canonicalizes MOBA alias ids (`12..17`) to the real BG type `12` when

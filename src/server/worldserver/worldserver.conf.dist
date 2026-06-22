@@ -766,7 +766,8 @@ CharacterCreating.Disabled.RaceMask = 0
 #                     256  - (Disabled, Warlock)
 #                     1024 - (Disabled, Druid)
 
-CharacterCreating.Disabled.ClassMask = 0
+# MOBA: disable ONLY the Death Knight (heroic class breaks the level-1 BG flow); 32 = Death Knight bit.
+CharacterCreating.Disabled.ClassMask = 32
 
 #
 #    CharactersPerAccount

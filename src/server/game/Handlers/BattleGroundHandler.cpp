@@ -84,10 +84,16 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
     if (_player->InBattleground())
         return;
 
-    // MOBA mode runs its own matchmaking (custom blue/red balancing, dev-solo, 1v1 pop) instead
-    // of the native BG queue. Delegate via a registered handler so core stays decoupled from scripts.
-    if (Moba::IsMobaBattlemasterListId(bgTypeId) && Moba::HandleBattlemasterJoin(_player, bgTypeId))
+    // MOBA-only server: MOBA list ids run their own matchmaking (custom blue/red balancing, dev-solo,
+    // 1v1 pop); EVERY other battleground is disabled (no Warsong, Arathi, Alterac, etc.).
+    if (Moba::IsMobaBattlemasterListId(bgTypeId))
+    {
+        Moba::HandleBattlemasterJoin(_player, bgTypeId);
         return;
+    }
+
+    ChatHandler(this).PSendSysMessage(LANG_BG_DISABLED);
+    return;
 
     // get bg instance or bg template if instance not found
     Battleground* bg = nullptr;
@@ -539,6 +545,10 @@ void WorldSession::HandleRequestBattlefieldStatusOpcode(WorldPackets::Battlegrou
 
 void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::BattlemasterJoinArena& packet)
 {
+    // MOBA-only server: arenas are disabled.
+    ChatHandler(this).PSendSysMessage(LANG_BG_DISABLED);
+    return;
+
     // ignore if rated but queued solo
     if (packet.IsRated && !packet.JoinAsGroup)
         return;

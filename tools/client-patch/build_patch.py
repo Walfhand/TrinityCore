@@ -59,6 +59,12 @@ FRAMEXML_DIR = os.path.join(ROOT, "client-patches", "framexml")
 # Custom FrameXML modules, in LOAD ORDER: the shared MobaUI core must load before the modules that use it.
 FRAMEXML_FILES = ["MobaUI.lua", "MobaLevel1PVP.lua", "MobaInstability.lua"]
 
+# Character creation: disable ONLY the Death Knight (heroic class -> starts level 55 with runes, which breaks
+# the level-1 MOBA bracket). All other classes stay creatable. CharBaseInfo.dbc is a special byte-record DBC:
+# each record is (raceId u8, classId u8).
+CHARBASEINFO_DBC = "DBFilesClient\\CharBaseInfo.dbc"
+DEATH_KNIGHT_CLASS_ID = 6
+
 # --- Spell.dbc field indices (3.3.5a, 0-based; see README) ---------------
 F_ID = 0
 F_CASTTIME = 28
@@ -307,6 +313,17 @@ def build_creature_display_dbc(base_bytes, display_ids):
     return serialize_dbc(fc, rs, rows, strblock)
 
 
+def build_charbaseinfo_no_deathknight(base_bytes):
+    """Drop the (race, Death Knight) rows so character creation offers every class EXCEPT Death Knight."""
+    magic, rc, fc, rs, sbs = struct.unpack("<4siiii", base_bytes[:20])
+    assert magic == b"WDBC" and rs == 2, "unexpected CharBaseInfo.dbc layout"
+    body = base_bytes[20:20 + rc * rs]
+    strblock = base_bytes[20 + rc * rs:20 + rc * rs + sbs]
+    kept = b"".join(body[i * rs:i * rs + rs] for i in range(rc) if body[i * rs + 1] != DEATH_KNIGHT_CLASS_ID)
+    print(f"  CharBaseInfo.dbc: dropped Death Knight rows, {len(kept) // rs} kept (of {rc})")
+    return struct.pack("<4siiii", b"WDBC", len(kept) // rs, fc, rs, sbs) + kept + strblock
+
+
 def build_framexml_toc():
     """Append our modules to the stock FrameXML.toc (in load order), preserving the original bytes."""
     raw = storm.read_file(FRAMEXML_TOC_MPQ, FRAMEXML_TOC)
@@ -344,6 +361,10 @@ def main():
     open(csdpath, "wb").write(new_csd)
     open(cdipath, "wb").write(new_cdi)
 
+    # Character creation -> every class except Death Knight.
+    cbipath = os.path.join(stage, "CharBaseInfo.dbc")
+    open(cbipath, "wb").write(build_charbaseinfo_no_deathknight(open(os.path.join(DBC_SRC, "CharBaseInfo.dbc"), "rb").read()))
+
     # Custom FrameXML modules (shared MobaUI core + features): patched toc + each lua.
     tocpath = os.path.join(stage, "FrameXML.toc")
     open(tocpath, "wb").write(build_framexml_toc())
@@ -362,6 +383,7 @@ def main():
         "DBFilesClient\\SkillLineAbility.dbc": slapath,
         "DBFilesClient\\CreatureSoundData.dbc": csdpath,
         "DBFilesClient\\CreatureDisplayInfo.dbc": cdipath,
+        CHARBASEINFO_DBC: cbipath,
     }
     for sound_path in MUTE_SOUND_FILES:
         archive[sound_path] = emptypath
