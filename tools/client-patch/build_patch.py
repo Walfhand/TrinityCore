@@ -65,6 +65,19 @@ FRAMEXML_FILES = ["MobaUI.lua", "MobaLevel1PVP.lua", "MobaInstability.lua"]
 CHARBASEINFO_DBC = "DBFilesClient\\CharBaseInfo.dbc"
 DEATH_KNIGHT_CLASS_ID = 6
 
+# PvP UI: the client populates the Battleground list frame from BattlemasterList.dbc (filtered by level/
+# faction), NOT from a server packet. The server already rejects every non-MOBA queue, but the entries
+# still SHOW. We keep only the MOBA row so the PvP UI lists only MOBA.
+# This client's loader gives a higher-index BASE patch priority even over locale patches (patch-4 wins
+# over patch-frFR-3), so a locale override never sticks. The file the client actually reads is patch-4.MPQ;
+# we therefore replace BattlemasterList.dbc IN PLACE inside patch-4.MPQ (keeping a pristine .orig backup
+# we always re-filter from, so the build stays idempotent).
+BATTLEMASTERLIST_DBC = "DBFilesClient\\BattlemasterList.dbc"
+BATTLEMASTERLIST_MPQ = os.path.join(
+    ROOT, "docker", "client", "WINDOWS_World_of_Warcraft_335a",
+    "WINDOWS_World of Warcraft 335a", "Data", "patch-4.MPQ")
+MOBA_BATTLEMASTER_IDS = {12}   # server BATTLEGROUND_MOBA = 12 (archetype aliases 13..17 are not DBC rows)
+
 # --- Spell.dbc field indices (3.3.5a, 0-based; see README) ---------------
 F_ID = 0
 F_CASTTIME = 28
@@ -324,6 +337,15 @@ def build_charbaseinfo_no_deathknight(base_bytes):
     return struct.pack("<4siiii", b"WDBC", len(kept) // rs, fc, rs, sbs) + kept + strblock
 
 
+def build_battlemasterlist_dbc(base_bytes):
+    """Keep only the MOBA rows so the client PvP UI lists nothing but MOBA."""
+    rc, fc, rs, rows, strblock = parse_dbc(base_bytes)
+    kept = [r for r in rows if get_field(r, F_ID) in MOBA_BATTLEMASTER_IDS]
+    print(f"  BattlemasterList.dbc: kept {len(kept)} MOBA row(s) of {rc} "
+          f"(ids {sorted(get_field(r, F_ID) for r in kept)})")
+    return serialize_dbc(fc, rs, kept, strblock)
+
+
 def build_framexml_toc():
     """Append our modules to the stock FrameXML.toc (in load order), preserving the original bytes."""
     raw = storm.read_file(FRAMEXML_TOC_MPQ, FRAMEXML_TOC)
@@ -364,6 +386,18 @@ def main():
     # Character creation -> every class except Death Knight.
     cbipath = os.path.join(stage, "CharBaseInfo.dbc")
     open(cbipath, "wb").write(build_charbaseinfo_no_deathknight(open(os.path.join(DBC_SRC, "CharBaseInfo.dbc"), "rb").read()))
+
+    # PvP UI -> only the MOBA battleground. Replace BattlemasterList.dbc in place inside patch-4.MPQ
+    # (the file the client actually reads), re-filtering from a pristine .orig backup each run.
+    bml_orig = BATTLEMASTERLIST_MPQ + ".orig"
+    if not os.path.exists(bml_orig):
+        import shutil
+        shutil.copy2(BATTLEMASTERLIST_MPQ, bml_orig)
+        print(f"  backed up {os.path.basename(BATTLEMASTERLIST_MPQ)} -> {os.path.basename(bml_orig)}")
+    bmlpath = os.path.join(stage, "BattlemasterList.dbc")
+    open(bmlpath, "wb").write(build_battlemasterlist_dbc(storm.read_file(bml_orig, BATTLEMASTERLIST_DBC)))
+    storm.add_file(BATTLEMASTERLIST_MPQ, BATTLEMASTERLIST_DBC, bmlpath)
+    print(f"  injected MOBA-only BattlemasterList.dbc into {os.path.basename(BATTLEMASTERLIST_MPQ)}")
 
     # Custom FrameXML modules (shared MobaUI core + features): patched toc + each lua.
     tocpath = os.path.join(stage, "FrameXML.toc")

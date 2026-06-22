@@ -64,7 +64,15 @@ void WipeSpellbook(Player* player)
         spellIds.push_back(spellPair.first);
 
     for (uint32 spellId : spellIds)
+    {
+        // Keep language spells (Language: Common, Orcish, racials...). They grant the chat-language skill;
+        // removing them leaves the player unable to send ANY chat ("You don't know this language"), which
+        // also blocks GM dot-commands (typed as chat). Languages are racial, so they never reveal the class.
+        if (SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId))
+            if (info->HasEffect(SPELL_EFFECT_LANGUAGE))
+                continue;
         player->RemoveSpell(spellId, false, false);
+    }
 }
 
 // Free the weapon slots so the archetype's starter gear can be equipped.
@@ -289,12 +297,20 @@ void RevertToBlank(Player* player)
     if (!player)
         return;
 
+    // Everyone (GMs included) gets an empty grimoire out of a match. GM `.` commands are account/RBAC-based,
+    // not spell-based, so wiping the spellbook does not affect them.
     // Out of a match the champion is an empty shell: nothing reveals which archetype it was.
     RemovePlayerProgress(player);             // undo applied stats + match state + per-archetype runtime
-    WipeSpellbook(player);                    // 0 spells
+    WipeSpellbook(player);                    // 0 spells (languages kept)
     ClearWeaponSlots(player);                 // unequip the starter weapon(s)
     ApplyArchetypePower(player, POWER_MANA);  // neutral resource (the custom UI hides the bar out of match)
     player->SetPower(POWER_MANA, 0);
+
+    // Self-heal: if an earlier over-eager wipe already stripped languages, re-learn the faction common
+    // one so the player can chat again (and GM dot-commands work). 668 = Common, 669 = Orcish.
+    uint32 const commonLanguage = (player->GetTeam() == ALLIANCE) ? 668 : 669;
+    if (!player->HasSpell(commonLanguage))
+        player->LearnSpell(commonLanguage, false);
 }
 
 void ClearArchetypeRuntime(Player const* player)

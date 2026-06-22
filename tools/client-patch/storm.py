@@ -44,6 +44,7 @@ _s.SFileCloseFile.argtypes   = [ctypes.c_void_p]
 _s.SFileCloseArchive.argtypes= [ctypes.c_void_p]
 _s.SFileCreateArchive.argtypes = [ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
 _s.SFileAddFileEx.argtypes   = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+_s.SFileCompactArchive.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
 
 
 def read_file(mpq_path, archived_name):
@@ -66,6 +67,21 @@ def read_file(mpq_path, archived_name):
             return buf.raw[:read.value]
         finally:
             _s.SFileCloseFile(fh)
+    finally:
+        _s.SFileCloseArchive(h)
+
+
+def add_file(mpq_path, archived_name, local_path):
+    """Add/replace a single internal file inside an EXISTING MPQ (in place), keeping all others."""
+    h = ctypes.c_void_p()
+    if not _s.SFileOpenArchive(mpq_path.encode(), 0, 0, ctypes.byref(h)):
+        raise RuntimeError(f"cannot open {mpq_path} for writing")
+    try:
+        ok = _s.SFileAddFileEx(h, local_path.encode(), archived_name.encode(),
+                               MPQ_FILE_COMPRESS | MPQ_FILE_REPLACEEXISTING,
+                               MPQ_COMPRESSION_ZLIB, MPQ_COMPRESSION_ZLIB)
+        if not ok:
+            raise RuntimeError(f"cannot add {archived_name} to {mpq_path}")
     finally:
         _s.SFileCloseArchive(h)
 
