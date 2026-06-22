@@ -24,7 +24,7 @@ struct PlayerMatchAssignment
 };
 
 void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId);
-void ClearQueueStatuses(Player* player, BattlegroundQueueTypeId firstQueueId, BattlegroundQueueTypeId secondQueueId);
+void ClearAllQueueSlots(Player* player);   // release every occupied BG queue slot (fixes leaked match slots)
 
 bool HasActiveMatchState(Player* player);
 bool QueueWaitingPlayer(Player* player, BattlegroundQueueTypeId queueId, PvPDifficultyEntry const* bracketEntry);

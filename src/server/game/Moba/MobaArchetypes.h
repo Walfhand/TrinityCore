@@ -65,6 +65,19 @@ void ClearArchetypeRuntime(Player const* player);   // drop any per-archetype ru
 // starter weapon, no custom resource, no match stats). The kit is re-applied on match entry.
 void RevertToBlank(Player* player);
 
+// Send the player to the out-of-match waiting area (the Darkmoon Faire grounds in Elwynn Forest): on
+// login outside a match and when a match ends.
+void TeleportToLobby(Player* player);
+
+// Request a GUARANTEED teleport to the faire (used on login / match exit). The teleport is deferred to the
+// world update (EnforceLobbyFence) so it never runs during the login handshake (which would limbo the
+// client); it is retried until the player is in a teleportable state. Robust against character-creation timing.
+void RequestLobbyPlacement(Player* player);
+
+// Software fence around the faire grounds: periodically snap out-of-match players who strayed too far
+// back to the centre (the faire is open world). Call from the world update; throttles itself. GMs exempt.
+void EnforceLobbyFence(uint32 diff);
+
 // Champion ranged auto-attack seam. The core combat hooks (CombatHandler / Player::Update) call these
 // generic entry points; they dispatch to the archetype that auto-attacks at range (currently only the
 // Sorcier). This keeps per-archetype combat logic in the archetype module, not in the core or in the

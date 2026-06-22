@@ -35,29 +35,20 @@ BattlegroundQueueTypeId GetPrototypeQueueTypeId(PvPDifficultyEntry const* bracke
     return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_MOBA, bracketEntry->GetBracketId(), 0);
 }
 
-BattlegroundQueueTypeId GetArenaCleanupQueueTypeId(PvPDifficultyEntry const* bracketEntry)
-{
-    return BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_AA, bracketEntry->GetBracketId(), ARENA_TYPE_2v2);
-}
-
 void ClearPrototypeQueues(Player* player, PvPDifficultyEntry const* bracketEntry)
 {
-    ClearQueueStatuses(player, GetPrototypeQueueTypeId(bracketEntry), GetArenaCleanupQueueTypeId(bracketEntry));
+    ClearQueueStatus(player, GetPrototypeQueueTypeId(bracketEntry));
 }
 
 bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bgQueue, BattlegroundQueueTypeId bgQueueTypeId, PvPDifficultyEntry const* bracketEntry, PlayerMatchAssignment const& assignment)
 {
     GroupQueueInfo* ginfo = nullptr;
-    uint32 queueSlot = player->GetBattlegroundQueueIndex(bgQueueTypeId);
     auto queuedPlayerItr = bgQueue.m_QueuedPlayers.find(player->GetGUID());
     if (queuedPlayerItr != bgQueue.m_QueuedPlayers.end())
         ginfo = queuedPlayerItr->second.GroupInfo;
 
     if (!ginfo)
-    {
         ginfo = bgQueue.AddGroup(player, nullptr, bracketEntry, false, false, 0, 0);
-        queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
-    }
 
     if (!ginfo)
     {
@@ -66,9 +57,19 @@ bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bg
         return false;
     }
 
-    ginfo->Team = ::Team(assignment.TeamId);
-    ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
-    ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
+    // Ensure the player owns a battleground queue slot for this queue id. The slot can be MISSING even when
+    // the queue group exists (a previous match can leave the player's two slots occupied/desynced from the
+    // queue groups). This is the real cause of the re-tag failure: the old code only added a slot in the
+    // "group not found" branch, so a group-found-but-slot-missing state hit "no free queue slot".
+    uint32 queueSlot = player->GetBattlegroundQueueIndex(bgQueueTypeId);
+    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+        queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
+    if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
+    {
+        // Both slots occupied (a stale queue id from a previous match). Release them and retry once.
+        ClearAllQueueSlots(player);
+        queueSlot = player->AddBattlegroundQueueId(bgQueueTypeId);
+    }
 
     if (queueSlot >= PLAYER_MAX_BATTLEGROUND_QUEUES)
     {
@@ -77,6 +78,10 @@ bool InvitePlayerToMatch(Player* player, Battleground* bg, BattlegroundQueue& bg
         bgQueue.RemovePlayer(player->GetGUID(), false);
         return false;
     }
+
+    ginfo->Team = ::Team(assignment.TeamId);
+    ginfo->IsInvitedToBGInstanceGUID = bg->GetInstanceID();
+    ginfo->RemoveInviteTime = GameTime::GetGameTimeMS() + INVITE_ACCEPT_WAIT_TIME;
 
     player->SetInviteForBattlegroundQueueType(bgQueueTypeId, bg->GetInstanceID());
     bg->IncreaseInvitedCount(assignment.TeamId);
@@ -307,9 +312,19 @@ public:
         // Reconnect into a running match: re-apply MOBA stats and re-sync the client (XP bar,
         // money) since the reloaded Player object lost the in-memory bonuses.
         if (player->InBattleground())
+        {
             Moba::ReapplyPlayerMatchState(player);
+        }
         else
-            Moba::RevertToBlank(player);   // logging in outside a match = blank shell (no class-specific kit)
+        {
+            // Logging in outside a match = blank shell (no class-specific kit). Do NOT teleport here:
+            // a teleport issued during login leaves the client in a half-loaded "being teleported" limbo
+            // (no collision, unstreamed creatures/NPCs, no aggro). Instead request a guaranteed deferred
+            // placement: the lobby fence (world update, runs once the player is fully in world) teleports
+            // them to the faire as soon as it is safe, retrying until it takes (robust after char creation).
+            Moba::RevertToBlank(player);
+            Moba::RequestLobbyPlacement(player);
+        }
     }
 
     void OnMapChanged(Player* player) override
@@ -323,6 +338,10 @@ public:
 
         Moba::AbandonPlayerMatch(player);
         Moba::RevertToBlank(player);   // left the match -> strip the kit, back to a blank character
+        // No teleport here: OnMapChanged also fires on login (it runs on every map enter), and teleporting
+        // during the map-enter leaves the client in a half-loaded limbo. Request a guaranteed deferred
+        // placement instead; the lobby fence (world update) puts the player on the faire grounds cleanly.
+        Moba::RequestLobbyPlacement(player);
     }
 };
 
@@ -335,6 +354,7 @@ public:
     {
         Moba::UpdatePassiveGold(diff);
         Moba::UpdateRespawns(diff);
+        Moba::EnforceLobbyFence(diff);   // leash out-of-match players to the faire grounds
         Moba::Sorcier::Update(diff);
     }
 };

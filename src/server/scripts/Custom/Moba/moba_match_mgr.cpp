@@ -167,6 +167,7 @@ void ClearPlayerMatch(Player* player, char const* reason)
     PlayerMatchRecord const record = itr->second;
     TC_LOG_INFO("scripts", "MOBA match: player {} cleared from match {} state {} ({})", player->GetName(), record.MatchId, GetMatchStateName(record.State), reason);
     ClearQueueStatus(player, record.QueueId);
+    ClearAllQueueSlots(player);            // also release any slot leaked under a mismatched (arena) queue id
     RemovePlayerProgress(player);
     RemovePlayerFromMatch(playerKey, record);
     PlayerMatches.erase(itr);
@@ -194,10 +195,20 @@ void ClearQueueStatus(Player* player, BattlegroundQueueTypeId queueId)
     player->RemoveBattlegroundQueueId(queueId);
 }
 
-void ClearQueueStatuses(Player* player, BattlegroundQueueTypeId firstQueueId, BattlegroundQueueTypeId secondQueueId)
+void ClearAllQueueSlots(Player* player)
 {
-    ClearQueueStatus(player, firstQueueId);
-    ClearQueueStatus(player, secondQueueId);
+    if (!player)
+        return;
+
+    // Free every occupied battleground queue slot by its actual queue id. A player has only
+    // PLAYER_MAX_BATTLEGROUND_QUEUES (2) slots; if a previous match leaves one occupied/desynced, a later
+    // queue eventually fails with "no free queue slot". Clearing by the real per-slot id releases any leak.
+    for (uint32 i = 0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; ++i)
+    {
+        BattlegroundQueueTypeId const queueId = player->GetBattlegroundQueueTypeId(i);
+        if (queueId != BATTLEGROUND_QUEUE_NONE)
+            ClearQueueStatus(player, queueId);
+    }
 }
 
 bool HasActiveMatchState(Player* player)

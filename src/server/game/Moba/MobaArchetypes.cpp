@@ -8,6 +8,7 @@
 
 #include "Item.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "SpellHistory.h"
 #include "SpellInfo.h"
@@ -15,6 +16,7 @@
 #include "World.h"
 #include "WorldSession.h"
 
+#include <unordered_set>
 #include <vector>
 
 namespace Moba
@@ -280,6 +282,9 @@ void UpdateArchetypeSpells(Player* player, uint32 archetypeIndex, uint32 mobaLev
 
 void ResetForMatch(Player* player)
 {
+    // Drop the lobby safe-zone immunity (set in RevertToBlank): in a match the champion fights normally.
+    player->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC));
+
     if (player->isDead())
         player->ResurrectPlayer(1.0f);
 
@@ -311,6 +316,100 @@ void RevertToBlank(Player* player)
     uint32 const commonLanguage = (player->GetTeam() == ALLIANCE) ? 668 : 669;
     if (!player->HasSpell(commonLanguage))
         player->LearnSpell(commonLanguage, false);
+
+    // The lobby is a safe zone: the blank shell has no weapon or spells, and the faire grounds have
+    // ambient/aggressive wildlife. Make it non-attackable with no NPC/PC combat. Cleared on match entry.
+    player->SetUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC));
+}
+
+namespace
+{
+// Out-of-match holding area: the Darkmoon Faire grounds in Elwynn Forest (map 0), south-east of
+// Goldshire (the faire master Silas sits at ~-9554/82/59).
+constexpr uint32 LOBBY_MAP = 0;
+constexpr float  LOBBY_X = -9560.0f;
+constexpr float  LOBBY_Y = 80.0f;
+constexpr float  LOBBY_Z = 59.0f;
+constexpr float  LOBBY_O = 1.0f;
+// Software fence: the faire is open world, so we leash out-of-match players to the grounds — stray past
+// this radius from the centre and the next check snaps you back. Big enough to roam the stalls freely.
+constexpr float  LOBBY_FENCE_RADIUS = 50.0f;
+constexpr uint32 LOBBY_FENCE_INTERVAL_MS = 1000;
+
+// Players owed a guaranteed teleport to the faire (just logged in / left a match). We do NOT teleport
+// during login (it leaves the client in a half-loaded limbo) and the distance fence alone is unreliable
+// right after character creation (timing, GM exemption). Instead we record the request and the fence
+// fulfils it as soon as the player is in a teleportable state, retrying every tick until it takes.
+std::unordered_set<ObjectGuid> g_pendingLobbyPlacement;
+}
+
+void TeleportToLobby(Player* player)
+{
+    if (!player)
+        return;
+
+    player->TeleportTo(LOBBY_MAP, LOBBY_X, LOBBY_Y, LOBBY_Z, LOBBY_O);
+}
+
+void RequestLobbyPlacement(Player* player)
+{
+    if (player)
+        g_pendingLobbyPlacement.insert(player->GetGUID());
+}
+
+void EnforceLobbyFence(uint32 diff)
+{
+    static uint32 timer = 0;
+    timer += diff;
+    if (timer < LOBBY_FENCE_INTERVAL_MS)
+        return;
+    timer = 0;
+
+    constexpr float radiusSq = LOBBY_FENCE_RADIUS * LOBBY_FENCE_RADIUS;
+
+    // 1) Fulfil guaranteed placements (login / match exit). Force the teleport regardless of GM or distance.
+    //    We KEEP the request until the player is confirmed ON the faire grounds, re-teleporting every tick:
+    //    a freshly-created character finishes its own positioning (intro cinematic / start-zone placement)
+    //    AFTER login, which can override a single early teleport — so one shot races and only "sometimes"
+    //    works. Retrying until confirmed beats that race. Prune offline / in-match requests.
+    for (auto it = g_pendingLobbyPlacement.begin(); it != g_pendingLobbyPlacement.end(); )
+    {
+        Player* player = ObjectAccessor::FindPlayer(*it);
+        if (!player || !player->IsInWorld() || player->InBattleground())
+        {
+            it = g_pendingLobbyPlacement.erase(it);   // gone, offline, or entered a match: drop the request
+            continue;
+        }
+        if (player->IsBeingTeleported())
+        {
+            ++it;                                     // a teleport is in flight: wait for it to settle
+            continue;
+        }
+        if (player->GetMapId() == LOBBY_MAP && player->GetExactDist2dSq(LOBBY_X, LOBBY_Y) <= radiusSq)
+        {
+            it = g_pendingLobbyPlacement.erase(it);   // confirmed on the faire grounds: done
+            continue;
+        }
+        TeleportToLobby(player);                      // not there yet (or got overridden): (re)place, keep request
+        ++it;
+    }
+
+    // 2) Ongoing fence: keep out-of-match, non-GM players on the faire grounds.
+    for (auto const& pair : sWorld->GetAllSessions())
+    {
+        Player* player = pair.second ? pair.second->GetPlayer() : nullptr;
+        if (!player || !player->IsInWorld())
+            continue;
+        if (player->InBattleground())          // in a match: leave them in the arena
+            continue;
+        if (player->IsGameMaster())            // a working GM is not leashed
+            continue;
+        if (player->IsBeingTeleported())       // mid-teleport (e.g. a queue pop): don't fight it
+            continue;
+        // Out of a match: keep them on the faire grounds.
+        if (player->GetMapId() != LOBBY_MAP || player->GetExactDist2dSq(LOBBY_X, LOBBY_Y) > radiusSq)
+            TeleportToLobby(player);
+    }
 }
 
 void ClearArchetypeRuntime(Player const* player)
