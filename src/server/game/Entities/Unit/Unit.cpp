@@ -45,6 +45,7 @@
 #include "Item.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "MobaArchetypes.h"
 #include "MotionMaster.h"
 #include "MovementGenerator.h"
 #include "MovementPackets.h"
@@ -12990,6 +12991,12 @@ PlayerMovementPendingChange::PlayerMovementPendingChange()
 
 void Unit::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
 {
+    // MOBA: a champion whose archetype uses the rage bar as a custom gauge (Sorcier's Instability) must
+    // not gain native rage from dealing/taking damage, or the gauge fills on its own.
+    if (Player const* player = ToPlayer())
+        if (Moba::SuppressesNativeRage(player))
+            return;
+
     float addRage;
 
     float rageconversion = ((0.0091107836f * GetLevel() * GetLevel()) + 3.225598133f * GetLevel()) + 4.2652911f;

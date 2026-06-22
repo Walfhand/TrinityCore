@@ -338,4 +338,18 @@ bool IsChampionBasicAttackSpell(Player const* champ, uint32 spellId)
             return false;
     }
 }
+
+bool SuppressesNativeRage(Player const* player)
+{
+    if (!player || !player->InBattleground())
+        return false;
+
+    MobaPlayerState const* state = GetPlayerState(player);
+    if (!state || !state->ProgressInitialized)
+        return false;
+
+    // The Sorcier repurposes POWER_RAGE as its Instability gauge, so native rage from damage dealt/taken
+    // must not feed it. Other rage archetypes (e.g. the Briseur) keep native rage and return false here.
+    return state->ArchetypeIndex == Sorcier::ArchetypeIndex;
+}
 }

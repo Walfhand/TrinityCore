@@ -47,6 +47,18 @@ MUTE_SOUND_FILES = [
     "Sound\\Spells\\Cast\\HolyCast.wav",        # secondary kit sound
 ]
 
+# Custom FrameXML UI shipped in the patch (always-on, requires the interface-edit exe patch). We append
+# our module to the stock FrameXML.toc (read from locale-frFR.MPQ) and ship our .lua alongside it.
+CLIENT_FRFR = os.path.join(ROOT, "docker", "client", "WINDOWS_World_of_Warcraft_335a",
+                           "WINDOWS_World of Warcraft 335a", "Data", "frFR")
+# The CURRENT 3.3.5 FrameXML.toc (Interface 30300, full file list) lives in the latest base patch, NOT in
+# locale-frFR.MPQ (that one is the stale 3.0.0 toc — using it would drop ~18 UI files and crash on login).
+FRAMEXML_TOC_MPQ = os.path.join(CLIENT_FRFR, "patch-frFR-3.MPQ")
+FRAMEXML_TOC = "Interface\\FrameXML\\FrameXML.toc"
+FRAMEXML_DIR = os.path.join(ROOT, "client-patches", "framexml")
+# Custom FrameXML modules, in LOAD ORDER: the shared MobaUI core must load before the modules that use it.
+FRAMEXML_FILES = ["MobaUI.lua", "MobaLevel1PVP.lua", "MobaInstability.lua"]
+
 # --- Spell.dbc field indices (3.3.5a, 0-based; see README) ---------------
 F_ID = 0
 F_CASTTIME = 28
@@ -295,6 +307,18 @@ def build_creature_display_dbc(base_bytes, display_ids):
     return serialize_dbc(fc, rs, rows, strblock)
 
 
+def build_framexml_toc():
+    """Append our modules to the stock FrameXML.toc (in load order), preserving the original bytes."""
+    raw = storm.read_file(FRAMEXML_TOC_MPQ, FRAMEXML_TOC)
+    if not raw.endswith(b"\n"):
+        raw += b"\r\n"
+    for name in FRAMEXML_FILES:
+        if name.encode() not in raw:
+            raw += (name + "\r\n").encode()
+            print("  FrameXML.toc: +" + name)
+    return raw
+
+
 def main():
     print(f"Reading base DBCs from {PATCH}")
     spell = storm.read_file(PATCH, "DBFilesClient\\Spell.dbc")
@@ -320,6 +344,15 @@ def main():
     open(csdpath, "wb").write(new_csd)
     open(cdipath, "wb").write(new_cdi)
 
+    # Custom FrameXML modules (shared MobaUI core + features): patched toc + each lua.
+    tocpath = os.path.join(stage, "FrameXML.toc")
+    open(tocpath, "wb").write(build_framexml_toc())
+    framexml_staged = {}
+    for name in FRAMEXML_FILES:
+        dst = os.path.join(stage, name)
+        open(dst, "wb").write(open(os.path.join(FRAMEXML_DIR, name), "rb").read())
+        framexml_staged[name] = dst
+
     # Zero-byte file used to silence each muted sound path (the client plays an empty wav = no sound).
     emptypath = os.path.join(stage, "silent.empty")
     open(emptypath, "wb").close()
@@ -333,6 +366,10 @@ def main():
     for sound_path in MUTE_SOUND_FILES:
         archive[sound_path] = emptypath
         print(f"  mute sound: {sound_path}")
+
+    archive[FRAMEXML_TOC] = tocpath
+    for name, dst in framexml_staged.items():
+        archive["Interface\\FrameXML\\" + name] = dst
 
     storm.build_archive(PATCH, archive)
     print(f"Wrote {PATCH}  ({os.path.getsize(PATCH)} bytes)")

@@ -164,6 +164,15 @@ columns), so the triggered visual cast fails `Spell::IsNeedSendToClient()` and n
 projectile) is sent. Setting a server-side Speed/visual makes the client draw the arcane bolt. Keep the
 values aligned with the client `Spell.dbc` clone in `tools/client-patch/build_patch.py`.
 
+### 16. `src/server/game/Entities/Unit/Unit.cpp` — `Unit::RewardRage`
+Early-out guard at the top: `if (Player const* p = ToPlayer()) if (Moba::SuppressesNativeRage(p)) return;`.
+(Also includes `#include "MobaArchetypes.h"`.)
+
+**Why:** the Sorcier repurposes the rage bar as its Instability gauge. Native WoW rage generation (on
+damage dealt and taken) would fill the gauge on its own — notably the player's Instability rose just from
+taking hits. The guard suppresses native rage only for archetypes that use a custom rage gauge (Sorcier);
+real rage archetypes like the Briseur are unaffected.
+
 ---
 
 ## Config (additive, low conflict risk)
@@ -181,7 +190,7 @@ custom-script hook; new MOBA script files are registered here.
 
 ## Maintenance checklist after a TrinityCore update
 
-1. Re-apply edits 1–15 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
+1. Re-apply edits 1–16 above (search for `Moba` / `MOBA` / `BATTLEGROUND_MOBA` in those files).
 2. New files under `src/server/game/Moba/` and `src/server/scripts/Custom/Moba/` need no
    action — `CollectSourceFiles` re-globs them automatically.
 3. Rebuild (`make image`) and re-import custom SQL if changed (`make db-custom`).

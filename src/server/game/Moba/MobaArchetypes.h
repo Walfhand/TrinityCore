@@ -70,6 +70,10 @@ bool UsesChampionRangedAutoAttack(Player const* player);
 bool StartChampionRangedAutoAttack(Player* player, Unit* victim);                  // true = suppress vanilla melee swing
 bool HandleChampionRangedAutoAttack(Player* player, Unit* victim, uint8& swingErrorMsg); // true = handled here this tick
 bool IsChampionBasicAttackSpell(Player const* champ, uint32 spellId);              // true for that champion's auto-attack spell(s)
+
+// True if native WoW rage generation (on damage dealt/taken) must be suppressed for this champion,
+// because its archetype repurposes the rage bar as a custom gauge (Sorcier = Instability). Core hook.
+bool SuppressesNativeRage(Player const* player);
 }
 
 #endif

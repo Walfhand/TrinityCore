@@ -18,16 +18,18 @@
 #include "Util.h"
 #include "WorldSession.h"
 
+#include <string>
 #include <unordered_map>
 
 namespace Moba::Sorcier
 {
 namespace
 {
-// Per-player timers for the Instability gauge. The gauge VALUE lives on the rage power bar; only the
-// decay accumulator and the post-cast grace window need storing. Keyed by player GUID counter.
+// Per-player Instability gauge. The VALUE is a fully custom variable (NOT a WoW power), so nothing native
+// renders it; the value is pushed to the client and a custom FrameXML bar draws it. Keyed by GUID counter.
 struct Runtime
 {
+    uint32 Instability = 0;   // the gauge itself, 0..InstabilityMax
     uint32 GraceMs = 0;       // no-decay window remaining after the last cast
     uint32 DecayCarryMs = 0;  // accumulator so sub-100ms ticks still decay smoothly
 };
@@ -43,6 +45,14 @@ void Notify(Player* player, std::string const& message)
 {
     player->GetSession()->SendNotification("%s", message.c_str());
     ChatHandler(player->GetSession()).SendSysMessage(message);
+}
+
+// Push the gauge (0..100) to the player's client as an addon message. A custom FrameXML bar listens for
+// the "MOBAINST" prefix and renders it; the gauge is not a WoW power, so no native bar is involved.
+void SendInstability(Player* player, uint32 value)
+{
+    uint32 const pct = InstabilityMax ? (value * 100 / InstabilityMax) : 0;
+    player->WhisperAddon("MOBAINST\t" + std::to_string(pct), player);
 }
 
 // --- Ranged basic attack ----------------------------------------------------------------------
@@ -123,14 +133,18 @@ void AddInstability(Player* player, uint32 amount)
     if (!player)
         return;
 
-    uint32 const cur = player->GetPower(POWER_RAGE);
-    player->SetPower(POWER_RAGE, std::min<uint32>(InstabilityMax, cur + amount));
-    Runtimes[KeyOf(player)].GraceMs = InstabilityDecayGraceMs;   // hold the gauge so casting accumulates
+    Runtime& rt = Runtimes[KeyOf(player)];
+    rt.Instability = std::min<uint32>(InstabilityMax, rt.Instability + amount);
+    rt.GraceMs = InstabilityDecayGraceMs;   // hold the gauge so casting accumulates
+    SendInstability(player, rt.Instability);
 }
 
 uint32 GetInstability(Player const* player)
 {
-    return player ? player->GetPower(POWER_RAGE) : 0;
+    if (!player)
+        return 0;
+    auto itr = Runtimes.find(KeyOf(player));
+    return itr != Runtimes.end() ? itr->second.Instability : 0;
 }
 
 float GetInstabilityDamageMultiplier(Player const* player)
@@ -138,7 +152,7 @@ float GetInstabilityDamageMultiplier(Player const* player)
     if (!player)
         return 1.0f;
 
-    float const ratio = float(player->GetPower(POWER_RAGE)) / float(InstabilityMax);
+    float const ratio = float(GetInstability(player)) / float(InstabilityMax);
     return 1.0f + ratio * InstabilityMaxDamageBonus;
 }
 
@@ -147,8 +161,8 @@ void ResetGauge(Player* player)
     if (!player)
         return;
 
-    player->SetPower(POWER_RAGE, 0);
     Runtimes.erase(KeyOf(player));
+    SendInstability(player, 0);
 }
 
 void ClearPlayer(Player const* player)
@@ -169,16 +183,17 @@ void Update(uint32 diff)
         }
 
         Runtime& rt = itr->second;
-        uint32 power = player->GetPower(POWER_RAGE);
+        uint32 const before = rt.Instability;
 
-        if (power >= InstabilityMax)
+        if (rt.Instability >= InstabilityMax)
         {
             uint32 const backlash = CalculatePct(player->GetMaxHealth(), InstabilityBacklashPctHealth);
-            player->SetPower(POWER_RAGE, 0);
+            rt.Instability = 0;
             rt.DecayCarryMs = 0;
             Notify(player, Trinity::StringFormat("Surcharge ! L'instabilite explose : {} degats.", backlash));
             // True self-damage: the overload bypasses armor/resistances so it matches the announced value.
             Unit::DealDamage(player, player, backlash, nullptr, SELF_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
+            SendInstability(player, 0);
             ++itr;
             continue;
         }
@@ -192,19 +207,22 @@ void Update(uint32 diff)
             continue;
         }
 
-        if (power == 0)
+        if (rt.Instability == 0)
         {
             itr = Runtimes.erase(itr);   // settled at empty: nothing to tick until the next cast
             continue;
         }
 
         rt.DecayCarryMs += diff;
+        uint32 power = rt.Instability;
         while (rt.DecayCarryMs >= 100 && power > 0)
         {
             rt.DecayCarryMs -= 100;
             power = power > InstabilityDecayPer100Ms ? power - InstabilityDecayPer100Ms : 0;
         }
-        player->SetPower(POWER_RAGE, power);
+        rt.Instability = power;
+        if (rt.Instability != before)
+            SendInstability(player, rt.Instability);
         ++itr;
     }
 }
