@@ -69,7 +69,7 @@ public:
                 _shotTimer -= diff;
                 return;
             }
-            _shotTimer = Moba::MobaTowerAttackIntervalMs;
+            _shotTimer = Moba::GetMobaTowerAttackIntervalMs();
 
             // Stickiness is tracked inside SelectTowerTarget (in the tower's own state), NOT via Attack:
             // a building model that gets a victim would rotate to face it, which looks wrong. The tower

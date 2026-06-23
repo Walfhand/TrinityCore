@@ -131,7 +131,7 @@ Unit* GetTowerForcedTarget(Creature* tower)
     }
 
     Unit* target = ObjectAccessor::GetUnit(*tower, itr->second.ForcedTarget);
-    if (!target || !target->IsAlive() || !tower->IsValidAttackTarget(target) || !tower->IsWithinDistInMap(target, MobaTowerRange))
+    if (!target || !target->IsAlive() || !tower->IsValidAttackTarget(target) || !tower->IsWithinDistInMap(target, GetMobaTowerRange()))
     {
         itr->second.ForcedTarget.Clear();
         return nullptr;
@@ -155,10 +155,11 @@ bool HasAliveTower(uint32 instanceId, uint32 team, uint32 lane)
 // Guaranteed damage (no spell hit roll), with the combat log + spell-school impact.
 void DealTowerDamage(Creature* tower, Unit* target, uint32 damage)
 {
-    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(MobaTowerShotSpell);
+    uint32 const spellId = GetMobaTowerShotSpell();
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
     SpellSchoolMask const school = spellInfo ? spellInfo->GetSchoolMask() : SPELL_SCHOOL_MASK_NORMAL;
 
-    SpellNonMeleeDamage log(tower, target, MobaTowerShotSpell, school);
+    SpellNonMeleeDamage log(tower, target, spellId, school);
     log.damage = damage;
     tower->SendSpellNonMeleeDamageLog(&log);
     Unit::DealDamage(tower, target, damage, nullptr, SPELL_DIRECT_DAMAGE, school, spellInfo, false);
@@ -191,10 +192,11 @@ void ApplyTowerTuning(Creature* tower)
     if (!tower || !IsTowerEntry(tower->GetEntry()))
         return;
 
-    tower->SetLevel(MobaTowerLevel);
-    tower->SetCreateHealth(MobaTowerHealth);
-    tower->SetMaxHealth(MobaTowerHealth);
-    tower->SetHealth(MobaTowerHealth);
+    uint32 const towerHealth = GetMobaTowerHealth();
+    tower->SetLevel(GetMobaTowerLevel());
+    tower->SetCreateHealth(towerHealth);
+    tower->SetMaxHealth(towerHealth);
+    tower->SetHealth(towerHealth);
     tower->SetReactState(REACT_PASSIVE);
 
     TowerStates[GetTowerKey(tower)].Team = GetTeamIdForTowerEntry(tower->GetEntry());
@@ -248,18 +250,19 @@ Unit* SelectTowerTarget(Creature* tower, Unit* /*currentVictim*/)
 
     uint32 const towerTeam = GetTeamIdForTowerEntry(tower->GetEntry());
     TowerState& state = TowerStates[GetTowerKey(tower)];
+    float const towerRange = GetMobaTowerRange();
 
     // Sticky: keep firing at the tracked target until it dies or leaves range. The target is held in our
     // own state (not via Unit::Attack), so the tower never sets UNIT_FIELD_TARGET and the building model
     // does not rotate to face it.
     if (Unit* sticky = state.CurrentTarget.IsEmpty() ? nullptr : ObjectAccessor::GetUnit(*tower, state.CurrentTarget))
-        if (sticky->IsAlive() && tower->IsValidAttackTarget(sticky) && tower->IsWithinDistInMap(sticky, MobaTowerRange))
+        if (sticky->IsAlive() && tower->IsValidAttackTarget(sticky) && tower->IsWithinDistInMap(sticky, towerRange))
             return sticky;
 
     std::list<Unit*> nearbyUnits;
-    Trinity::AnyUnitInObjectRangeCheck check(tower, MobaTowerRange);
+    Trinity::AnyUnitInObjectRangeCheck check(tower, towerRange);
     Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(tower, nearbyUnits, check);
-    Cell::VisitAllObjects(tower, searcher, MobaTowerRange);
+    Cell::VisitAllObjects(tower, searcher, towerRange);
 
     Unit* bestTarget = nullptr;
     uint32 bestPriority = 0;
@@ -294,21 +297,22 @@ void TowerShoot(Creature* tower, Unit* target)
 
     TowerState& state = TowerStates[GetTowerKey(tower)];
 
-    uint32 damage = MobaTowerDamageVsMinion;
+    uint32 damage = GetMobaTowerDamageVsMinion();
     if (target->GetTypeId() == TYPEID_PLAYER)
     {
         uint32 const now = GameTime::GetGameTimeMS();
-        if (now - state.LastChampShotMs > MobaTowerRampResetMs)
+        if (now - state.LastChampShotMs > GetMobaTowerRampResetMs())
             state.RampStacks = 0;
 
-        float const ramp = std::min(state.RampStacks * MobaTowerRampPerShot, MobaTowerRampMax);
-        damage = uint32(MobaTowerDamageVsChampion * (1.0f + ramp));
+        float const ramp = std::min(state.RampStacks * GetMobaTowerRampPerShot(), GetMobaTowerRampMax());
+        damage = uint32(GetMobaTowerDamageVsChampion() * (1.0f + ramp));
 
         ++state.RampStacks;
         state.LastChampShotMs = now;
     }
 
-    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(MobaTowerShotSpell);
+    uint32 const spellId = GetMobaTowerShotSpell();
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
     // Flying bolt visual (0 damage so it neither double-hits nor "misses"). Cast from the top-mounted
     // emitter when present (building models render no missile from themselves); fall back to the tower.
@@ -320,10 +324,10 @@ void TowerShoot(Creature* tower, Unit* target)
 
     CastSpellExtraArgs args(TriggerCastFlags(TRIGGERED_FULL_MASK | TRIGGERED_IGNORE_TARGET_CHECK));
     args.AddSpellMod(SPELLVALUE_BASE_POINT0, 0);
-    SpellCastResult const visualResult = visualCaster->CastSpell(target, MobaTowerShotSpell, args);
+    SpellCastResult const visualResult = visualCaster->CastSpell(target, spellId, args);
     if (visualResult != SPELL_CAST_OK)
         TC_LOG_WARN("server", "MOBA tower visual spell {} failed from caster {} to target {} with result {}",
-            MobaTowerShotSpell, visualCaster->GetGUID().ToString(), target->GetGUID().ToString(), uint32(visualResult));
+            spellId, visualCaster->GetGUID().ToString(), target->GetGUID().ToString(), uint32(visualResult));
 
     // Apply the real (guaranteed) damage when the bolt reaches the target, matching its travel time.
     uint32 delayMs = 0;
@@ -352,9 +356,10 @@ void NotifyTowerAggro(Unit* attacker, Unit* victim)
         return;
 
     std::list<Creature*> nearbyTowers;
-    Trinity::AllCreaturesOfEntryInRange checkBlue(victimPlayer, GetTowerEntry(victimPlayer->GetBGTeam()), MobaTowerRange);
+    float const towerRange = GetMobaTowerRange();
+    Trinity::AllCreaturesOfEntryInRange checkBlue(victimPlayer, GetTowerEntry(victimPlayer->GetBGTeam()), towerRange);
     Trinity::CreatureListSearcher<Trinity::AllCreaturesOfEntryInRange> searcher(victimPlayer, nearbyTowers, checkBlue);
-    Cell::VisitAllObjects(victimPlayer, searcher, MobaTowerRange);
+    Cell::VisitAllObjects(victimPlayer, searcher, towerRange);
 
     for (Creature* tower : nearbyTowers)
     {
@@ -363,7 +368,7 @@ void NotifyTowerAggro(Unit* attacker, Unit* victim)
 
         TowerState& state = TowerStates[GetTowerKey(tower)];
         state.ForcedTarget = attackingPlayer->GetGUID();
-        state.ForcedTargetExpireMs = GameTime::GetGameTimeMS() + MobaTowerRampResetMs;
+        state.ForcedTargetExpireMs = GameTime::GetGameTimeMS() + GetMobaTowerRampResetMs();
     }
 }
 

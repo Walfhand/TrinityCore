@@ -58,8 +58,8 @@ void LoadMobaMaps()
 
     // Per-team height of the invisible shot emitter above the tower base (tune in moba_tower_muzzle,
     // no C++ rebuild). Defaults if the table is empty/missing a team.
-    float blueMuzzleDz = MobaTowerMuzzleHeight;
-    float redMuzzleDz = MobaTowerMuzzleHeight;
+    float blueMuzzleDz = GetMobaTowerMuzzleHeight();
+    float redMuzzleDz = GetMobaTowerMuzzleHeight();
     if (QueryResult result = WorldDatabase.Query("SELECT team, dz FROM moba_tower_muzzle"))
     {
         do

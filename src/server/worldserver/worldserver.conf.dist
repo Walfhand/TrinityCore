@@ -4192,4 +4192,36 @@ Moba.TeamSize = 1
 Moba.DevSoloMode = 1
 
 #
+#    Moba.Tower.*
+#        Description: Runtime tuning for MOBA towers.
+#                     AttackIntervalMs defaults to 1200 because LoL turrets use
+#                     0.833 attacks/sec, which is about one shot every 1.2 sec.
+#                     ShotSpell is visual only; scripted tower damage is applied
+#                     separately when the projectile reaches the target.
+#
+#        Moba.Tower.Level:            Tower creature level.
+#        Moba.Tower.Health:           Tower max/current health on spawn.
+#        Moba.Tower.Range:            Aggro and attack range.
+#        Moba.Tower.AttackIntervalMs: Delay between shots, in milliseconds.
+#        Moba.Tower.DamageVsMinion:   Flat damage dealt to minions.
+#        Moba.Tower.DamageVsChampion: Base damage dealt to players before ramp.
+#        Moba.Tower.RampPerShot:      Bonus damage added per consecutive champion shot.
+#        Moba.Tower.RampMax:          Maximum ramp bonus.
+#        Moba.Tower.RampResetMs:      Time before champion ramp and forced aggro expire.
+#        Moba.Tower.ShotSpell:        Spell id used for the visible projectile.
+#        Moba.Tower.MuzzleHeight:     Default vertical offset for the tower projectile emitter.
+
+Moba.Tower.Level = 1
+Moba.Tower.Health = 4000
+Moba.Tower.Range = 18.0
+Moba.Tower.AttackIntervalMs = 1200
+Moba.Tower.DamageVsMinion = 350
+Moba.Tower.DamageVsChampion = 120
+Moba.Tower.RampPerShot = 0.50
+Moba.Tower.RampMax = 1.50
+Moba.Tower.RampResetMs = 5000
+Moba.Tower.ShotSpell = 6353
+Moba.Tower.MuzzleHeight = 9.0
+
+#
 ###################################################################################################

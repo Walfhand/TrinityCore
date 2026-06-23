@@ -5,6 +5,7 @@
 #ifndef GAME_MOBA_RULES_H
 #define GAME_MOBA_RULES_H
 
+#include "Config.h"
 #include "Define.h"
 #include "SharedDefines.h"
 
@@ -100,7 +101,7 @@ inline constexpr uint32 MobaNexusHealth = 10000;      // a lot of HP so it is a 
 inline constexpr uint8 MobaTowerLevel = 1;
 inline constexpr uint32 MobaTowerHealth = 4000;            // tanky structure
 inline constexpr float MobaTowerRange = 18.0f;             // attack range (was 30, felt too far)
-inline constexpr uint32 MobaTowerAttackIntervalMs = 1000;
+inline constexpr uint32 MobaTowerAttackIntervalMs = 1200;  // LoL turret AS is 0.833 attacks/sec ~= 1.2s per shot.
 inline constexpr uint32 MobaTowerDamageVsMinion = 350;     // shreds minions
 inline constexpr uint32 MobaTowerDamageVsChampion = 120;   // base damage; ramps on consecutive shots
 inline constexpr float MobaTowerRampPerShot = 0.50f;       // +50% per consecutive shot on a champion (LoL)
@@ -110,6 +111,35 @@ inline constexpr uint32 MobaTowerShotSpell = 6353;         // Soul Fire: large, 
 inline constexpr float MobaTowerMuzzleHeight = 9.0f;       // height of the invisible shot emitter above the tower base (tune per model)
 inline constexpr uint32 MobaNexusTowerLane = 9;            // lane id used for the nexus-guarding towers
 inline constexpr uint32 MobaStructureShieldSpell = 642;    // Divine Shield: golden bubble on invulnerable structures
+
+inline uint32 GetMobaConfigUInt32(char const* name, uint32 fallback, uint32 minValue = 0)
+{
+    int32 const value = sConfigMgr->GetIntDefault(name, int32(fallback));
+    return value < int32(minValue) ? minValue : uint32(value);
+}
+
+inline float GetMobaConfigFloat(char const* name, float fallback, float minValue = 0.0f)
+{
+    float const value = sConfigMgr->GetFloatDefault(name, fallback);
+    return value < minValue ? minValue : value;
+}
+
+inline uint8 GetMobaTowerLevel()
+{
+    uint32 const value = GetMobaConfigUInt32("Moba.Tower.Level", MobaTowerLevel, 1);
+    return uint8(value > 255 ? 255 : value);
+}
+
+inline uint32 GetMobaTowerHealth() { return GetMobaConfigUInt32("Moba.Tower.Health", MobaTowerHealth, 1); }
+inline float GetMobaTowerRange() { return GetMobaConfigFloat("Moba.Tower.Range", MobaTowerRange, 1.0f); }
+inline uint32 GetMobaTowerAttackIntervalMs() { return GetMobaConfigUInt32("Moba.Tower.AttackIntervalMs", MobaTowerAttackIntervalMs, 1); }
+inline uint32 GetMobaTowerDamageVsMinion() { return GetMobaConfigUInt32("Moba.Tower.DamageVsMinion", MobaTowerDamageVsMinion, 0); }
+inline uint32 GetMobaTowerDamageVsChampion() { return GetMobaConfigUInt32("Moba.Tower.DamageVsChampion", MobaTowerDamageVsChampion, 0); }
+inline float GetMobaTowerRampPerShot() { return GetMobaConfigFloat("Moba.Tower.RampPerShot", MobaTowerRampPerShot, 0.0f); }
+inline float GetMobaTowerRampMax() { return GetMobaConfigFloat("Moba.Tower.RampMax", MobaTowerRampMax, 0.0f); }
+inline uint32 GetMobaTowerRampResetMs() { return GetMobaConfigUInt32("Moba.Tower.RampResetMs", MobaTowerRampResetMs, 1); }
+inline uint32 GetMobaTowerShotSpell() { return GetMobaConfigUInt32("Moba.Tower.ShotSpell", MobaTowerShotSpell, 1); }
+inline float GetMobaTowerMuzzleHeight() { return GetMobaConfigFloat("Moba.Tower.MuzzleHeight", MobaTowerMuzzleHeight, 0.0f); }
 
 inline bool IsTeamId(uint32 teamId)
 {
